@@ -8,11 +8,6 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        #        exclude:
-        #        - os: windows-latest
-        #          python-version: 2.7
-        #        - os: macos-latest
-        #          python-version: 2.7
 
     steps:
     - uses: actions/checkout@v1
@@ -23,11 +18,9 @@ jobs:
     - name: Install dependencies
       run: |
         python .github/workflows/install_deps.py
-      continue-on-error: true
     - name: Run tests and flake8
       run: |
         python .github/workflows/run_tests.py
-      continue-on-error: true
 
     - name: Set up Python 3.5
       uses: actions/setup-python@v1
@@ -36,11 +29,9 @@ jobs:
     - name: Install dependencies
       run: |
         python .github/workflows/install_deps.py
-      continue-on-error: true
     - name: Run tests and flake8
       run: |
         python .github/workflows/run_tests.py
-      continue-on-error: true
 
     - name: Set up Python 3.6
       uses: actions/setup-python@v1
@@ -49,11 +40,9 @@ jobs:
     - name: Install dependencies
       run: |
         python .github/workflows/install_deps.py
-      continue-on-error: true
     - name: Run tests and flake8
       run: |
         python .github/workflows/run_tests.py
-      continue-on-error: true
 
     - name: Set up Python 3.7
       uses: actions/setup-python@v1
@@ -62,11 +51,9 @@ jobs:
     - name: Install dependencies
       run: |
         python .github/workflows/install_deps.py
-      continue-on-error: true
     - name: Run tests and flake8
       run: |
         python .github/workflows/run_tests.py
-      continue-on-error: true
 
     - name: Set up Python 3.8
       uses: actions/setup-python@v1
@@ -75,8 +62,6 @@ jobs:
     - name: Install dependencies
       run: |
         python .github/workflows/install_deps.py
-      continue-on-error: true
     - name: Run tests and flake8
       run: |
         python .github/workflows/run_tests.py
-      continue-on-error: true
