@@ -621,7 +621,7 @@ class ConfigHandler(object):
 
         if 'passfile' in primary_conninfo and 'password' not in primary_conninfo \
                 and 'password' in wanted_primary_conninfo:
-            logger.error('primary_conninfo=%s wanted_primary_conninfo=%', primary_conninfo, wanted_primary_conninfo)
+            logger.error('primary_conninfo=%s wanted_primary_conninfo=%s', primary_conninfo, wanted_primary_conninfo)
             if self._check_passfile(primary_conninfo['passfile'], wanted_primary_conninfo):
                 primary_conninfo['password'] = wanted_primary_conninfo['password']
             else:
