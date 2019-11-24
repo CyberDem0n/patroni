@@ -20,6 +20,7 @@ jobs:
     - name: Install dependencies
       run: |
         python .github/workflows/install_deps.py
+      if: matrix.os != 'windows-latest'
     - name: Run tests and flake8
       run: |
         python .github/workflows/run_tests.py
