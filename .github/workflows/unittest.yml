@@ -25,7 +25,7 @@ jobs:
         python .github/workflows/install_deps.py
     - name: Run tests and flake8
       run: |
-        python .github/workflows/install_tests.py
+        python .github/workflows/run_tests.py
 
     - name: Set up Python 3.5
       uses: actions/setup-python@v1
@@ -36,7 +36,7 @@ jobs:
         python .github/workflows/install_deps.py
     - name: Run tests and flake8
       run: |
-        python .github/workflows/install_tests.py
+        python .github/workflows/run_tests.py
 
     - name: Set up Python 3.6
       uses: actions/setup-python@v1
@@ -52,7 +52,7 @@ jobs:
         python .github/workflows/install_deps.py
     - name: Run tests and flake8
       run: |
-        python .github/workflows/install_tests.py
+        python .github/workflows/run_tests.py
 
     - name: Set up Python 3.8
       uses: actions/setup-python@v1
@@ -63,4 +63,4 @@ jobs:
         python .github/workflows/install_deps.py
     - name: Run tests and flake8
       run: |
-        python .github/workflows/install_tests.py
+        python .github/workflows/run_tests.py
