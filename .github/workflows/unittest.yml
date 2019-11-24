@@ -36,4 +36,4 @@ jobs:
         unbuffer python setup.py flake8
     - name: Test with pytest
       run: |
-        python setup.py test
+        unbuffer python setup.py test
