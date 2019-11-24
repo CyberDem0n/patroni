@@ -4,13 +4,10 @@ on: [pull_request]
 
 jobs:
   build:
-
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        #        python-version: [2.7, 3.5, 3.6, 3.7, 3.8]
-        os: [ubuntu-latest]
-        #        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
         #        exclude:
         #        - os: windows-latest
         #          python-version: 2.7
@@ -20,38 +17,51 @@ jobs:
     steps:
     - uses: actions/checkout@v1
     - name: Set up Python 2.7
-      uses: actions/setup-python@v1
+      uses: &setup actions/setup-python@v1
       with:
         python-version: 2.7
-    - name: Install dependencies
+    - &deps
+      name: Install dependencies
       run: |
-        sudo apt-get install postgresql-10 expect-dev
         python -m pip install --upgrade pip
-        #ls -al /opt/hostedtoolcache/Python/
-        #du -shc /opt/hostedtoolcache/Python/*
         pip install -r requirements.txt
         pip install psycopg2-binary behave codacy-coverage coverage coveralls flake8 mock pytest-cov pytest setuptools
-    - name: Lint with flake8
+    - &flake8
+      name: Lint with flake8
       run: |
         python setup.py flake8
-    - name: Test with pytest
+    - name: &pytest Test with pytest
       run: |
-        unbuffer python setup.py test
+        python setup.py test
+
     - name: Set up Python 3.5
-      uses: actions/setup-python@v1
+      uses: *setup
       with:
         python-version: 3.5
-    - name: Install dependencies
-      run: |
-        sudo apt-get install postgresql-10 expect-dev
-        python -m pip install --upgrade pip
-        #ls -al /opt/hostedtoolcache/Python/
-        #du -shc /opt/hostedtoolcache/Python/*
-        pip install -r requirements.txt
-        pip install psycopg2-binary behave codacy-coverage coverage coveralls flake8 mock pytest-cov pytest setuptools
-    - name: Lint with flake8
-      run: |
-        python setup.py flake8
-    - name: Test with pytest
-      run: |
-        unbuffer python setup.py test
+    - *deps
+    - *flake8
+    - *pytest
+
+    - name: Set up Python 3.6
+      uses: *setup
+      with:
+        python-version: 3.6
+    - *deps
+    - *flake8
+    - *pytest
+
+    - name: Set up Python 3.7
+      uses: *setup
+      with:
+        python-version: 3.7
+    - *deps
+    - *flake8
+    - *pytest
+
+    - name: Set up Python 3.8
+      uses: *setup
+      with:
+        python-version: 3.8
+    - *deps
+    - *flake8
+    - *pytest
