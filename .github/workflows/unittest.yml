@@ -8,7 +8,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        python-version: [2.7, 3.5, 3.6, 3.7, 3.8]
+        #        python-version: [2.7, 3.5, 3.6, 3.7, 3.8]
         os: [ubuntu-latest]
         #        os: [ubuntu-latest, windows-latest, macos-latest]
         #        exclude:
@@ -19,13 +19,13 @@ jobs:
 
     steps:
     - uses: actions/checkout@v1
-    - name: Set up Python ${{ matrix.python-version }}
+    - name: Set up Python 2.7
       uses: actions/setup-python@v1
       with:
-        python-version: ${{ matrix.python-version }}
+        python-version: 2.7
     - name: Install dependencies
       run: |
-        sudo apt-get install expect-dev
+        sudo apt-get install postgresql-10 expect-dev
         python -m pip install --upgrade pip
         #ls -al /opt/hostedtoolcache/Python/
         #du -shc /opt/hostedtoolcache/Python/*
@@ -33,7 +33,25 @@ jobs:
         pip install psycopg2-binary behave codacy-coverage coverage coveralls flake8 mock pytest-cov pytest setuptools
     - name: Lint with flake8
       run: |
-        unbuffer python setup.py flake8
+        python setup.py flake8
+    - name: Test with pytest
+      run: |
+        unbuffer python setup.py test
+    - name: Set up Python 3.5
+      uses: actions/setup-python@v1
+      with:
+        python-version: 3.5
+    - name: Install dependencies
+      run: |
+        sudo apt-get install postgresql-10 expect-dev
+        python -m pip install --upgrade pip
+        #ls -al /opt/hostedtoolcache/Python/
+        #du -shc /opt/hostedtoolcache/Python/*
+        pip install -r requirements.txt
+        pip install psycopg2-binary behave codacy-coverage coverage coveralls flake8 mock pytest-cov pytest setuptools
+    - name: Lint with flake8
+      run: |
+        python setup.py flake8
     - name: Test with pytest
       run: |
         unbuffer python setup.py test
