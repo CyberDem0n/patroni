@@ -500,7 +500,6 @@ class ConfigHandler(object):
                     value['passfile'] = self._passfile = self._pgpass
                     self._passfile_mtime = mtime(self._pgpass)
                 value = self.format_dsn(value)
-                logger.error('primary_conninfo=%s', value)
             fd.write_param(name, value)
 
     def build_recovery_params(self, member):
@@ -621,7 +620,6 @@ class ConfigHandler(object):
 
         if 'passfile' in primary_conninfo and 'password' not in primary_conninfo \
                 and 'password' in wanted_primary_conninfo:
-            logger.error('primary_conninfo=%s wanted_primary_conninfo=%s', primary_conninfo, wanted_primary_conninfo)
             if self._check_passfile(primary_conninfo['passfile'], wanted_primary_conninfo):
                 primary_conninfo['password'] = wanted_primary_conninfo['password']
             else:
@@ -655,7 +653,6 @@ class ConfigHandler(object):
             # We will cache parsed value until the next config change.
             self._current_recovery_params = params
             primary_conninfo = params['primary_conninfo']
-            logger.error('primary_conninfo=%s', primary_conninfo)
             if primary_conninfo[0]:
                 primary_conninfo[0] = parse_dsn(params['primary_conninfo'][0])
                 # If we failed to parse non-empty connection string this indicates that config if broken.
