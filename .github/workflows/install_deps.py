@@ -33,7 +33,9 @@ def main():
             else:
                 requirements.append(r)
     subprocess.call([sys.executable, '-m', 'pip', 'install', '--upgrade', 'pip'])
-    return subprocess.call([sys.executable, '-m', 'pip', 'install'] + requirements)
+    r = subprocess.call([sys.executable, '-m', 'pip', 'install'] + requirements)
+    s = subprocess.call([sys.executable, '-m', 'pip', 'install', '--upgrade', 'setuptools'])
+    return s | r
 
 
 if __name__ == '__main__':
