@@ -10,7 +10,7 @@ jobs:
       matrix:
         os: [ubuntu-latest]
         python-version: [2.7, 3.5, 3.7]
-        dcs: [etcd, consul, kubernetes]
+        dcs: [etcd, consul, exhibitor, kubernetes]
 
     steps:
     - uses: actions/checkout@v1
