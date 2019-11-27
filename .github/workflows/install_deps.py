@@ -113,7 +113,7 @@ def main():
         'consul': ['consul'],
         'kubernetes': []
     }
-    packages['exhibitor'] = packages['etcd']
+    packages['exhibitor'] = packages['zookeeper']
     p = install_packages(packages[what])
     d = setup_dcs(what)
     return r | p | d
