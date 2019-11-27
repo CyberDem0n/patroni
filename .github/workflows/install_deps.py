@@ -40,7 +40,7 @@ def install_requirements(what):
 
 
 def install_packages(packages):
-    subprocess.call(['sudo', 'apt-get', 'install', '-y', 'postgresql-10', 'expect-dev', 'wget'] + packages)
+    return subprocess.call(['sudo', 'apt-get', 'install', '-y', 'postgresql-10', 'expect-dev', 'wget'] + packages)
 
 
 def setup_kubernetes():

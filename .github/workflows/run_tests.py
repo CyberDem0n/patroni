@@ -10,7 +10,9 @@ def main():
         flake8 = subprocess.call([sys.executable, 'setup.py', 'flake8'])
         test = subprocess.call([sys.executable, 'setup.py', 'test'])
         return flake8 | test
-    return subprocess.call([sys.executable, '-m', 'behave'])
+    env = os.environ.copy()
+    env['PATH'] = '/usr/lib/postgresql/10/bin:' + env['PATH']
+    return subprocess.call(['unbuffer', sys.executable, '-m', 'behave'], env=env)
 
 
 if __name__ == '__main__':
