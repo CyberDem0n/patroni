@@ -1,0 +1,26 @@
+name: Patroni integration tests
+
+on: [pull_request]
+
+jobs:
+  unit-tests:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        python-version: [2.7, 3.4, 3.7]
+        dcs: [etcd, consul, kubernetes]
+
+    steps:
+    - uses: actions/checkout@v1
+    - name: Set up Python
+      uses: actions/setup-python@v1
+      with:
+        python-version: {{ matrix.python-version }}
+    - name: Install dependencies
+      run: |
+        python .github/workflows/install_deps.py {{ matrix.dcs }}
+    - name: Run behave tests
+      run: |
+        python .github/workflows/run_tests.py {{ matrix.dcs }}
