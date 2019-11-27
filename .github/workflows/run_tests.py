@@ -12,6 +12,7 @@ def main():
         return flake8 | test
     env = os.environ.copy()
     env['PATH'] = '/usr/lib/postgresql/10/bin:' + env['PATH']
+    env['DCS'] = what
     return subprocess.call(['unbuffer', sys.executable, '-m', 'behave'], env=env)
 
 

@@ -49,10 +49,11 @@ def setup_kubernetes():
     if w != 0:
         return w
     os.chmod('localkube', stat.S_IXOTH)
+    devnull = open(os.devnull, 'w')
     subprocess.Popen(['sudo', './localkube', '--logtostderr=true', '--enable-dns=false'],
-                     stdout=os.devnull, stderr=os.devnull)
+                     stdout=devnull, stderr=devnull)
     for _ in range(0, 120):
-        if subprocess.call(['wget', '-O', '-', 'http://127.0.0.1:8080/'], stdout=os.devnull, stderr=os.devnull) == 0:
+        if subprocess.call(['wget', '-O', '-', 'http://127.0.0.1:8080/'], stdout=devnull, stderr=devnull) == 0:
             break
         time.sleep(1)
     else:
