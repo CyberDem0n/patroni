@@ -44,7 +44,7 @@ def install_packages(packages):
 
 
 def setup_kubernetes():
-    w = subprocess.call(['wget', '-O', 'localkube',
+    w = subprocess.call(['wget', '-qO', 'localkube',
                          'https://storage.googleapis.com/minikube/k8sReleases/v1.7.0/localkube-linux-amd64'])
     if w != 0:
         return w
@@ -53,7 +53,7 @@ def setup_kubernetes():
     subprocess.Popen(['sudo', './localkube', '--logtostderr=true', '--enable-dns=false'],
                      stdout=devnull, stderr=devnull)
     for _ in range(0, 120):
-        if subprocess.call(['wget', '-O', '-', 'http://127.0.0.1:8080/'], stdout=devnull, stderr=devnull) == 0:
+        if subprocess.call(['wget', '-qO', '-', 'http://127.0.0.1:8080/'], stdout=devnull, stderr=devnull) == 0:
             break
         time.sleep(1)
     else:
@@ -88,9 +88,17 @@ users:
     return 0
 
 
+def setup_exhibitor():
+    response = 'HTTP/1.0 200 OK\nContent-Type: application/json\n\n{"servers":["127.0.0.1"],"port":2181}'
+    subprocess.Popen("while true; do echo -e '{0}'| nc -l 8181 &> /dev/null; done".format(response), shell=True)
+    return 0
+
+
 def setup_dcs(dcs):
     if dcs == 'kubernetes':
         return setup_kubernetes()
+    elif dcs == 'exhibitor':
+        return setup_exhibitor()
     return 0
 
 

@@ -3,7 +3,7 @@ name: Patroni integration tests
 on: [pull_request]
 
 jobs:
-  unit-tests:
+  behave:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false

@@ -13,7 +13,10 @@ def main():
     env = os.environ.copy()
     env['PATH'] = '/usr/lib/postgresql/10/bin:' + env['PATH']
     env['DCS'] = what
-    return subprocess.call(['unbuffer', sys.executable, '-m', 'behave'], env=env)
+    if subprocess.call(['unbuffer', sys.executable, '-m', 'behave'], env=env) != 0:
+        subprocess.call('grep . features/output/*_failed/*postgres?.*', shell=True)
+        return 1
+    return 0
 
 
 if __name__ == '__main__':
