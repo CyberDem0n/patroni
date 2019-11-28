@@ -53,7 +53,7 @@ def setup_kubernetes():
     subprocess.Popen(['sudo', 'nohup', './localkube', '--logtostderr=true', '--enable-dns=false'],
                      stdout=devnull, stderr=devnull)
     for _ in range(0, 120):
-        if subprocess.call(['wget', '-qO', '-', 'http://127.0.0.1:8080/'], stdout=devnull, stderr=devnull) == 0:
+        if subprocess.call(['wget', '-qO', '-', 'http://127.0.0.1:8080/']) == 0:
             time.sleep(10)
             break
         time.sleep(1)
@@ -90,11 +90,10 @@ users:
 
 
 def setup_exhibitor():
-    response = 'HTTP/1.0 200 OK\nContent-Type: application/json\n\n{"servers":["127.0.0.1"],"port":2181}'
-    subprocess.Popen("while true; do echo -e '{0}'| nc -l 8181 &> /dev/null; done".format(response), shell=True)
-    time.sleep(1)
-    subprocess.call(['wget', '-O', '-', 'http://localhost:8181'])
-    return 0
+    response = '{"servers":["127.0.0.1"],"port":2181}'
+    response = 'HTTP/1.0 200 OK\\nContent-Length: {0}\\n\\n{1}'.format(len(response), response)
+    s = subprocess.Popen("while true; do echo -e '{0}'| nc -l 8181 &> /dev/null; done".format(response), shell=True)
+    return 0 if s.poll() is None else s.returncode
 
 
 def setup_dcs(dcs):
