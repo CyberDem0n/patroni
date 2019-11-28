@@ -92,7 +92,7 @@ users:
 def setup_exhibitor():
     response = '{"servers":["127.0.0.1"],"port":2181}'
     response = 'HTTP/1.0 200 OK\\nContent-Length: {0}\\n\\n{1}'.format(len(response), response)
-    s = subprocess.Popen("while true; do echo -e '{0}'| nc -l 8181 &> /dev/null; done".format(response), shell=True)
+    s = subprocess.Popen("while true; do echo '{0}'| nc -l 8181 &> /dev/null; done".format(response), shell=True)
     return 0 if s.poll() is None else s.returncode
 
 
@@ -122,4 +122,5 @@ def main():
 
 
 if __name__ == '__main__':
+    sys.exit(setup_exhibitor())
     sys.exit(main())
