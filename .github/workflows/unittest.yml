@@ -1,9 +1,9 @@
-name: Patroni unit tests
+name: unit
 
 on: [pull_request]
 
 jobs:
-  unit-tests:
+  tests:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -23,7 +23,7 @@ jobs:
       if: matrix.os != 'windows-latest'
     - name: Run tests and flake8
       run: |
-        python setup.py test flake8
+        python .github/workflows/run_tests.py
       if: matrix.os != 'windows-latest'
 
     - name: Set up Python 3.5
@@ -35,7 +35,7 @@ jobs:
         python .github/workflows/install_deps.py
     - name: Run tests and flake8
       run: |
-        python setup.py test flake8
+        python .github/workflows/run_tests.py
 
     - name: Set up Python 3.6
       uses: actions/setup-python@v1
@@ -46,7 +46,7 @@ jobs:
         python .github/workflows/install_deps.py
     - name: Run tests and flake8
       run: |
-        python setup.py test flake8
+        python .github/workflows/run_tests.py
 
     - name: Set up Python 3.7
       uses: actions/setup-python@v1
@@ -57,7 +57,7 @@ jobs:
         python .github/workflows/install_deps.py
     - name: Run tests and flake8
       run: |
-        python setup.py test flake8
+        python .github/workflows/run_tests.py
 
     - name: Set up Python 3.8
       uses: actions/setup-python@v1
@@ -68,4 +68,4 @@ jobs:
         python .github/workflows/install_deps.py
     - name: Run tests and flake8
       run: |
-        python setup.py test flake8
+        python .github/workflows/run_tests.py

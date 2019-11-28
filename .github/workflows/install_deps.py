@@ -6,16 +6,6 @@ import sys
 import time
 
 
-EXTRAS = {
-    'aws': 'boto',
-    'etcd': 'python-etcd',
-    'consul': 'python-consul',
-    'exhibitor': 'kazoo',
-    'zookeeper': 'kazoo',
-    'kubernetes': 'kubernetes'
-}
-
-
 def install_requirements(what):
     old_path = sys.path[:]
     w = os.path.join(os.getcwd(), os.path.dirname(inspect.getfile(inspect.currentframe())))
@@ -25,7 +15,7 @@ def install_requirements(what):
     finally:
         sys.path = old_path
     requirements = ['mock>=2.0.0', 'flake8', 'pytest', 'pytest-cov'] if what == 'all' else ['behave']
-    requirements += ['psycopg2-binary', 'codacy-coverage', 'coverage', 'coveralls', 'setuptools']
+    requirements += ['psycopg2-binary', 'codacy-coverage', 'coverage', 'coveralls']
     for r in read('requirements.txt').split('\n'):
         r = r.strip()
         if r != '':
@@ -39,7 +29,14 @@ def install_requirements(what):
     return s | r
 
 
-def install_packages(packages):
+def install_packages(what):
+    packages = {
+        'etcd': ['etcd'],
+        'zookeeper': ['zookeeper', 'zookeeper-bin', 'zookeeperd'],
+        'consul': ['consul'],
+    }
+    packages['exhibitor'] = packages['zookeeper']
+    packages = packages.get(what, [])
     return subprocess.call(['sudo', 'apt-get', 'install', '-y', 'postgresql-10', 'expect-dev', 'wget'] + packages)
 
 
@@ -53,7 +50,7 @@ def setup_kubernetes():
     subprocess.Popen(['sudo', 'nohup', './localkube', '--logtostderr=true', '--enable-dns=false'],
                      stdout=devnull, stderr=devnull)
     for _ in range(0, 120):
-        if subprocess.call(['wget', '-qO', '-', 'http://127.0.0.1:8080/']) == 0:
+        if subprocess.call(['wget', '-qO', '-', 'http://127.0.0.1:8080/'], stdout=devnull, stderr=devnull) == 0:
             time.sleep(10)
             break
         time.sleep(1)
@@ -101,13 +98,7 @@ def main():
     r = install_requirements(what)
     if what == 'all' or r != 0:
         return r
-    packages = {
-        'etcd': ['etcd'],
-        'zookeeper': ['zookeeper', 'zookeeper-bin', 'zookeeperd'],
-        'consul': ['consul'],
-    }
-    packages['exhibitor'] = packages['zookeeper']
-    r = install_packages(packages.get(what, []))
+    r = install_packages(what)
     if r != 0:
         return r
     if what == 'kubernetes':
