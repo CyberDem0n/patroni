@@ -41,6 +41,7 @@ Feature: basic replication
     Then I receive a response code 200
     When I add the table bar to postgres2
     Then table bar is present on postgres1 after 20 seconds
+    And Response on GET http://127.0.0.1:8010/config contains master_start_timeout after 10 seconds
 
   Scenario: check immediate failover when master_start_timeout=0
     Given I kill postmaster on postgres2
