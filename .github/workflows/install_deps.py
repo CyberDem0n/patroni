@@ -30,7 +30,7 @@ def install_requirements(what):
                 if r.startswith(v):
                     if e == what:
                         requirements.append(r)
-                    break
+                        break
             else:
                 requirements.append(r)
     subprocess.call([sys.executable, '-m', 'pip', 'install', '--upgrade', 'pip'])
