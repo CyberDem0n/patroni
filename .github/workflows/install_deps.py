@@ -1,3 +1,4 @@
+import inspect
 import os
 import subprocess
 import stat
@@ -16,23 +17,22 @@ EXTRAS = {
 
 
 def install_requirements(what):
-    requirements = ['mock', 'flake8', 'pytest', 'pytest-cov'] if what == 'all' else ['behave']
+    old_path = sys.path[:]
+    w = os.path.join(os.getcwd(), os.path.dirname(inspect.getfile(inspect.currentframe())))
+    sys.path.insert(0, os.path.dirname(os.path.dirname(w)))
+    try:
+        from setup import EXTRAS_REQUIRE, read
+    finally:
+        sys.path = old_path
+    requirements = ['mock>=2.0.0', 'flake8', 'pytest', 'pytest-cov'] if what == 'all' else ['behave']
     requirements += ['psycopg2-binary', 'codacy-coverage', 'coverage', 'coveralls', 'setuptools']
-    with open('requirements.txt') as f:
-        for r in f.read().split('\n'):
-            r = r.strip()
-            if r == '':
-                continue
-            if what == 'all' or what not in EXTRAS:
+    for r in read('requirements.txt').split('\n'):
+        r = r.strip()
+        if r != '':
+            extras = {e for e, v in EXTRAS_REQUIRE.items() if r.startswith(v[0])}
+            if not extras or what == 'all' or what in extras:
                 requirements.append(r)
-                continue
-            for e, v in EXTRAS.items():
-                if r.startswith(v):
-                    if e == what:
-                        requirements.append(r)
-                        break
-            else:
-                requirements.append(r)
+
     subprocess.call([sys.executable, '-m', 'pip', 'install', '--upgrade', 'pip'])
     r = subprocess.call([sys.executable, '-m', 'pip', 'install'] + requirements)
     s = subprocess.call([sys.executable, '-m', 'pip', 'install', '--upgrade', 'setuptools'])
@@ -96,29 +96,25 @@ def setup_exhibitor():
     return 0 if s.poll() is None else s.returncode
 
 
-def setup_dcs(dcs):
-    if dcs == 'kubernetes':
-        return setup_kubernetes()
-    elif dcs == 'exhibitor':
-        return setup_exhibitor()
-    return 0
-
-
 def main():
     what = os.environ.get('DCS', sys.argv[1] if len(sys.argv) > 1 else 'all')
     r = install_requirements(what)
     if what == 'all' or r != 0:
-        return
+        return r
     packages = {
         'etcd': ['etcd'],
         'zookeeper': ['zookeeper', 'zookeeper-bin', 'zookeeperd'],
         'consul': ['consul'],
-        'kubernetes': []
     }
     packages['exhibitor'] = packages['zookeeper']
-    p = install_packages(packages[what])
-    d = setup_dcs(what)
-    return r | p | d
+    r = install_packages(packages.get(what, []))
+    if r != 0:
+        return r
+    if what == 'kubernetes':
+        return setup_kubernetes()
+    elif what == 'exhibitor':
+        return setup_exhibitor()
+    return 0
 
 
 if __name__ == '__main__':

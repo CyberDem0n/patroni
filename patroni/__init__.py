@@ -4,6 +4,8 @@ import signal
 import sys
 import time
 
+from .version import __version__
+
 logger = logging.getLogger(__name__)
 
 PATRONI_ENV_PREFIX = 'PATRONI_'
@@ -19,7 +21,6 @@ class Patroni(object):
         from patroni.log import PatroniLogger
         from patroni.postgresql import Postgresql
         from patroni.request import PatroniRequest
-        from patroni.version import __version__
         from patroni.watchdog import Watchdog
 
         self.setup_signal_handlers()
