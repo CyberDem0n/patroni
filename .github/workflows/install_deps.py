@@ -50,10 +50,11 @@ def setup_kubernetes():
         return w
     os.chmod('localkube', stat.S_IXOTH)
     devnull = open(os.devnull, 'w')
-    subprocess.Popen(['sudo', './localkube', '--logtostderr=true', '--enable-dns=false'],
+    subprocess.Popen(['sudo', 'nohup', './localkube', '--logtostderr=true', '--enable-dns=false'],
                      stdout=devnull, stderr=devnull)
     for _ in range(0, 120):
         if subprocess.call(['wget', '-qO', '-', 'http://127.0.0.1:8080/'], stdout=devnull, stderr=devnull) == 0:
+            time.sleep(10)
             break
         time.sleep(1)
     else:
@@ -91,6 +92,8 @@ users:
 def setup_exhibitor():
     response = 'HTTP/1.0 200 OK\nContent-Type: application/json\n\n{"servers":["127.0.0.1"],"port":2181}'
     subprocess.Popen("while true; do echo -e '{0}'| nc -l 8181 &> /dev/null; done".format(response), shell=True)
+    time.sleep(1)
+    subprocess.call(['wget', '-O', '-', 'http://localhost:8181'])
     return 0
 
 
