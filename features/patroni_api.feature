@@ -43,6 +43,7 @@ Scenario: check dynamic configuration change via DCS
 	When I issue a GET request to http://127.0.0.1:8008/patroni
 	Then I receive a response code 200
 	And I receive a response tags {'new_tag': 'new_value'}
+        And I sleep for 4 seconds
 
 Scenario: check the scheduled restart
 	Given I issue a PATCH request to http://127.0.0.1:8008/config with {"postgresql": {"parameters": {"superuser_reserved_connections": "6"}}}
