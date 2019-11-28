@@ -17,10 +17,12 @@ jobs:
       with:
         python-version: 2.7
       if: matrix.os != 'windows-latest'
+    - name: Install dependencies
+      run: |
+        python .github/workflows/install_deps.py
+      if: matrix.os != 'windows-latest'
     - name: Run tests and flake8
       run: |
-        python -m pip install --upgrade pip
-        python -m pip install --upgrade setuptools pytest
         python setup.py test flake8
       if: matrix.os != 'windows-latest'
 
@@ -28,38 +30,42 @@ jobs:
       uses: actions/setup-python@v1
       with:
         python-version: 3.5
+    - name: Install dependencies
+      run: |
+        python .github/workflows/install_deps.py
     - name: Run tests and flake8
       run: |
-        python -m pip install --upgrade pip
-        python -m pip install --upgrade setuptools pytest
         python setup.py test flake8
 
     - name: Set up Python 3.6
       uses: actions/setup-python@v1
       with:
         python-version: 3.6
+    - name: Install dependencies
+      run: |
+        python .github/workflows/install_deps.py
     - name: Run tests and flake8
       run: |
-        python -m pip install --upgrade pip
-        python -m pip install --upgrade setuptools pytest
         python setup.py test flake8
 
     - name: Set up Python 3.7
       uses: actions/setup-python@v1
       with:
         python-version: 3.7
+    - name: Install dependencies
+      run: |
+        python .github/workflows/install_deps.py
     - name: Run tests and flake8
       run: |
-        python -m pip install --upgrade pip
-        python -m pip install --upgrade setuptools pytest
         python setup.py test flake8
 
     - name: Set up Python 3.8
       uses: actions/setup-python@v1
       with:
         python-version: 3.8
+    - name: Install dependencies
+      run: |
+        python .github/workflows/install_deps.py
     - name: Run tests and flake8
       run: |
-        python -m pip install --upgrade pip
-        python -m pip install --upgrade setuptools pytest
         python setup.py test flake8
