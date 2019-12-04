@@ -627,7 +627,7 @@ class Postgresql(object):
         # Don't try to call pg_controldata during backup restore
         if self._version_file_exists() and self.state != 'creating replica':
             try:
-                env = {n: os.environ[n] for n in ('PATH', 'SYSTEMROOT') if n in os.environ}
+                env = os.environ.copy()
                 env.update(LANG='C', LC_ALL='C')
                 data = subprocess.check_output([self.pgcommand('pg_controldata'), self._data_dir], env=env)
                 if data:
