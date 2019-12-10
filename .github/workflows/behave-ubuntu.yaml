@@ -11,10 +11,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: [3.5]
-#        python-version: [2.7, 3.5, 3.8]
-#        dcs: [etcd, consul, exhibitor, kubernetes]
-        dcs: [kubernetes]
+        python-version: [2.7, 3.5, 3.8]
+        dcs: [etcd, consul, exhibitor, kubernetes]
 
     steps:
     - uses: actions/checkout@v1
