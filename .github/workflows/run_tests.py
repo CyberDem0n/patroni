@@ -21,7 +21,6 @@ def main():
         unbuffer = []
     env['PATH'] = path + os.pathsep + env['PATH']
     env['DCS'] = what
-    print('Calling {0} env={1}'.format(unbuffer + [sys.executable, '-m', 'behave'], env))
     if subprocess.call(unbuffer + [sys.executable, '-m', 'behave'], env=env) != 0:
         subprocess.call('grep . features/output/*_failed/*postgres?.*', shell=True)
         return 1
