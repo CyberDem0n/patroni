@@ -1,9 +1,12 @@
 import inspect
 import os
+import shutil
 import subprocess
 import stat
 import sys
+import tarfile
 import time
+import zipfile
 
 
 def install_requirements(what):
@@ -31,7 +34,6 @@ def install_requirements(what):
 
 def install_packages(what):
     packages = {
-        'etcd': ['etcd'],
         'zookeeper': ['zookeeper', 'zookeeper-bin', 'zookeeperd'],
         'consul': ['consul'],
     }
@@ -40,12 +42,70 @@ def install_packages(what):
     return subprocess.call(['sudo', 'apt-get', 'install', '-y', 'postgresql-10', 'expect-dev', 'wget'] + packages)
 
 
+def get_file(url, name):
+    from six.moves.urllib.request import urlretrieve
+    urlretrieve(url, name)
+
+
+def untar(archive, name):
+    with tarfile.open(archive) as tar:
+        f = tar.extractfile(name)
+        dest = os.path.basename(name)
+        with open(dest, 'wb') as d:
+            shutil.copyfileobj(f, d)
+            return dest
+
+
+def unzip(archive, name):
+    with zipfile.ZipFile(archive, 'r') as z:
+        name = z.extract(name)
+        dest = os.path.basename(name)
+        shutil.move(name, dest)
+        return dest
+
+
+def unzip_all(archive):
+    with zipfile.ZipFile(archive, 'r') as z:
+        z.extractall()
+
+
+def chmod_755(name):
+    os.chmod(name, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR |
+             stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH)
+
+
+def unpack(archive, name):
+    func = unzip if archive.endswith('.zip') else untar
+    name = func(archive, name)
+    chmod_755(name)
+    return name
+
+
+def install_etcd():
+    version = os.environ.get('ETCDVERSION', '3.3.13')
+    platform = {'linux2': 'linux', 'win32': 'windows', 'cygwin': 'windows'}.get(sys.platform, sys.platform)
+    dirname = 'etcd-v{0}-{1}-amd64'.format(version, platform)
+    ext = 'tar.gz' if platform == 'linux' else 'zip'
+    name = '{0}.{1}'.format(dirname, ext)
+    url = 'https://github.com/etcd-io/etcd/releases/download/v{0}/{1}'.format(version, name)
+    get_file(url, name)
+    ext = '.exe' if platform == 'windows' else ''
+    return int(unpack(name, '{0}/etcd{1}'.format(dirname, ext)) is None)
+
+
+def install_postgres():
+    version = os.environ.get('PGVERSION', '12.1-1')
+    platform = {'darwin': 'osx', 'win32': 'windows', 'cygwin': 'windows'}[sys.platform]
+    name = 'postgresql-{0}-{1}-binaries.zip'.format(version, platform)
+    get_file('http://get.enterprisedb.com/postgresql/' + name, name)
+    unzip_all(name)
+    return 0
+
+
 def setup_kubernetes():
-    w = subprocess.call(['wget', '-qO', 'localkube',
-                         'https://storage.googleapis.com/minikube/k8sReleases/v1.7.0/localkube-linux-amd64'])
-    if w != 0:
-        return w
-    os.chmod('localkube', stat.S_IXOTH)
+    get_file('https://storage.googleapis.com/minikube/k8sReleases/v1.7.0/localkube-linux-amd64', 'localkube')
+    chmod_755('localkube')
+
     devnull = open(os.devnull, 'w')
     subprocess.Popen(['sudo', 'nohup', './localkube', '--logtostderr=true', '--enable-dns=false'],
                      stdout=devnull, stderr=devnull)
@@ -98,10 +158,17 @@ def main():
     r = install_requirements(what)
     if what == 'all' or r != 0:
         return r
-    r = install_packages(what)
+
+    if sys.platform.startswith('linux'):
+        r = install_packages(what)
+    else:
+        r = install_postgres()
     if r != 0:
         return r
-    if what == 'kubernetes':
+
+    if what == 'etcd':
+        return install_etcd()
+    elif what == 'kubernetes':
         return setup_kubernetes()
     elif what == 'exhibitor':
         return setup_exhibitor()

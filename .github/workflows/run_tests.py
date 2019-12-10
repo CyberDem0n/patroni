@@ -11,9 +11,17 @@ def main():
         test = subprocess.call([sys.executable, 'setup.py', 'test'])
         return flake8 | test
     env = os.environ.copy()
-    env['PATH'] = '/usr/lib/postgresql/10/bin:' + env['PATH']
+    if sys.platform.startswith('linux'):
+        path = '/usr/lib/postgresql/10/bin:.'
+        unbuffer = ['unbuffer']
+    else:
+        path = os.path.join('pgsql', 'bin')
+        if sys.platform == 'darwin':
+            path += ':.'
+        unbuffer = []
+    env['PATH'] = path + os.pathsep + env['PATH']
     env['DCS'] = what
-    if subprocess.call(['unbuffer', sys.executable, '-m', 'behave'], env=env) != 0:
+    if subprocess.call(unbuffer + [sys.executable, '-m', 'behave'], env=env) != 0:
         subprocess.call('grep . features/output/*_failed/*postgres?.*', shell=True)
         return 1
     return 0
