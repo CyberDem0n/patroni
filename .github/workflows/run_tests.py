@@ -13,7 +13,7 @@ def main():
     env = os.environ.copy()
     if sys.platform.startswith('linux'):
         path = '/usr/lib/postgresql/10/bin:.'
-        unbuffer = ['unbuffer']
+        unbuffer = ['timeout', '480', 'unbuffer']
     else:
         path = os.path.join('pgsql', 'bin')
         if sys.platform == 'darwin':
