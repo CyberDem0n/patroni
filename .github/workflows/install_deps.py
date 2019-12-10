@@ -102,6 +102,9 @@ def install_postgres():
     name = 'postgresql-{0}-{1}-binaries.zip'.format(version, platform)
     get_file('http://get.enterprisedb.com/postgresql/' + name, name)
     unzip_all(name)
+    bin_dir = os.path.join('pgsql', 'bin')
+    for f in os.listdir(bin_dir):
+        chmod_755(os.path.join(bin_dir, f))
     subprocess.call(['pgsql/bin/postgres', '-V'])
     return 0
 
