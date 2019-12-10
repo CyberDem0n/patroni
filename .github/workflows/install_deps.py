@@ -44,6 +44,7 @@ def install_packages(what):
 
 def get_file(url, name):
     from six.moves.urllib.request import urlretrieve
+    print('Downloading ' + url)
     urlretrieve(url, name)
 
 
@@ -65,6 +66,7 @@ def unzip(archive, name):
 
 
 def unzip_all(archive):
+    print('Extracting ' + archive)
     with zipfile.ZipFile(archive, 'r') as z:
         z.extractall()
 
@@ -75,6 +77,7 @@ def chmod_755(name):
 
 
 def unpack(archive, name):
+    print('Extracting {0} from {1}', name, archive)
     func = unzip if archive.endswith('.zip') else untar
     name = func(archive, name)
     chmod_755(name)
@@ -99,6 +102,7 @@ def install_postgres():
     name = 'postgresql-{0}-{1}-binaries.zip'.format(version, platform)
     get_file('http://get.enterprisedb.com/postgresql/' + name, name)
     unzip_all(name)
+    subprocess.call(['pgsql/bin/postgres', '-V'])
     return 0
 
 
