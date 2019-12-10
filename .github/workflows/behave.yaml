@@ -1,4 +1,4 @@
-name: integration
+name: others
 
 on: [pull_request]
 
