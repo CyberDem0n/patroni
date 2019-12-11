@@ -420,6 +420,7 @@ class KubernetesController(AbstractDcsController):
         self._label_selector = ','.join('{0}={1}'.format(k, v) for k, v in self._labels.items())
         os.environ['PATRONI_KUBERNETES_LABELS'] = json.dumps(self._labels)
         os.environ['PATRONI_KUBERNETES_USE_ENDPOINTS'] = 'true'
+        os.environ['PATRONI_LOG_LEVEL'] = 'DEBUG'
 
         from kubernetes import client as k8s_client, config as k8s_config
         k8s_config.load_kube_config(context='local')
