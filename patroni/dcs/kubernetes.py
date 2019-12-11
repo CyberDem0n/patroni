@@ -69,7 +69,6 @@ def catch_kubernetes_errors(func):
                 logger.exception('Permission denied')
             elif e.status != 409:  # Object exists or conflict in resource_version
                 logger.exception('Unexpected error from Kubernetes API')
-            logger.info('KubernetesError: %s', e)
             return False
         except (RetryFailedError, HTTPException, HTTPError, socket.error, socket.timeout):
             return False
