@@ -15,7 +15,7 @@ def main():
         path = '/usr/lib/postgresql/10/bin:.'
         unbuffer = ['timeout', '480', 'unbuffer']
     else:
-        path = os.path.join('pgsql', 'bin')
+        path = os.path.abspath(os.path.join('pgsql', 'bin'))
         if sys.platform == 'darwin':
             path += ':.'
         unbuffer = []
