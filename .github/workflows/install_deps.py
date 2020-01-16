@@ -98,7 +98,7 @@ def install_etcd():
 
 def install_postgres():
     version = os.environ.get('PGVERSION', '12.1-1')
-    platform = {'darwin': 'osx', 'win32': 'windows', 'cygwin': 'windows'}[sys.platform]
+    platform = {'darwin': 'osx', 'win32': 'windows-x64', 'cygwin': 'windows-x64'}[sys.platform]
     name = 'postgresql-{0}-{1}-binaries.zip'.format(version, platform)
     get_file('http://get.enterprisedb.com/postgresql/' + name, name)
     unzip_all(name)
