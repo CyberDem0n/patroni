@@ -21,6 +21,7 @@ def main():
         unbuffer = []
     env['PATH'] = path + os.pathsep + env['PATH']
     env['DCS'] = what
+    os.environ['__COMPAT_LAYER'] = 'RunAsInvoker'  # try to reduce privileges on windows
     if subprocess.call(unbuffer + [sys.executable, '-m', 'behave'], env=env) != 0:
         if subprocess.call('grep . features/output/*_failed/*postgres?.*', shell=True) != 0:
             subprocess.call('grep . features/output/*/*postgres?.*', shell=True)
