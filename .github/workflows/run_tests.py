@@ -33,7 +33,7 @@ def main():
             fd.write(passwd)
         command = 'runas /user:postgres "' + ' '.join(command) + '" < passwd.txt'
         ret = subprocess.call(command, env=env, shell=True)
-    else
+    else:
         ret = subprocess.call(command, env=env)
     if ret != 0:
         if subprocess.call('grep . features/output/*_failed/*postgres?.*', shell=True) != 0:
