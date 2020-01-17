@@ -27,9 +27,14 @@ def main():
     if os.name == 'nt':
         symbols = list(string.printable.strip())
         random.shuffle(symbols)
-        subprocess.call(['net', 'user', 'postgres', ''.join(symbols[:12]), '/ADD'])
+        passwd = ''.join(symbols[:12])
+        subprocess.call(['net', 'user', 'postgres', passwd, '/ADD'])
         command = ['runas', '/user:postgres', ' '.join(command)]
-    if subprocess.call(command, env=env) != 0:
+    proc = subprocess.Popen(command, env=env, stdin=subprocess.PIPE)
+    if os.name == 'nt':
+        proc.stdin.write(passwd)
+        proc.stdin.close()
+    if proc.wait() != 0:
         if subprocess.call('grep . features/output/*_failed/*postgres?.*', shell=True) != 0:
             subprocess.call('grep . features/output/*/*postgres?.*', shell=True)
         return 1
