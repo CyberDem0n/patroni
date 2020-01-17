@@ -1,4 +1,6 @@
 import os
+import random
+import string
 import subprocess
 import sys
 
@@ -23,7 +25,9 @@ def main():
     env['DCS'] = what
     command = unbuffer + [sys.executable, '-m', 'behave']
     if os.name == 'nt':
-        subprocess.call(['net', 'user', 'postgres', 'postgres', '/ADD'])
+        symbols = list(string.printable.strip())
+        random.shuffle(symbols)
+        subprocess.call(['net', 'user', 'postgres', ''.join(symbols[:32]), '/ADD'])
         command = ['runas', '/user:postgres', ' '.join(command)]
     if subprocess.call(command, env=env) != 0:
         if subprocess.call('grep . features/output/*_failed/*postgres?.*', shell=True) != 0:
