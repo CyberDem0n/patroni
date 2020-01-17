@@ -32,7 +32,7 @@ def main():
         command = ['runas', '/user:postgres', ' '.join(command)]
     proc = subprocess.Popen(command, env=env, stdin=subprocess.PIPE)
     if os.name == 'nt':
-        proc.communicate(passwd + '\n')
+        proc.communicate((passwd + '\n').encode('utf-8'))
     proc.stdin.close()
     if proc.wait() != 0:
         if subprocess.call('grep . features/output/*_failed/*postgres?.*', shell=True) != 0:
