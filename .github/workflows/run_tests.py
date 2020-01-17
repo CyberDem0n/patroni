@@ -27,7 +27,7 @@ def main():
     if os.name == 'nt':
         symbols = list(string.printable.strip())
         random.shuffle(symbols)
-        subprocess.call(['net', 'user', 'postgres', ''.join(symbols[:32]), '/ADD'])
+        subprocess.call(['net', 'user', 'postgres', ''.join(symbols[:12]), '/ADD'])
         command = ['runas', '/user:postgres', ' '.join(command)]
     if subprocess.call(command, env=env) != 0:
         if subprocess.call('grep . features/output/*_failed/*postgres?.*', shell=True) != 0:
