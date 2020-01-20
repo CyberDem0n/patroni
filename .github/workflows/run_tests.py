@@ -1,5 +1,4 @@
 import os
-import string
 import subprocess
 import sys
 
@@ -24,9 +23,7 @@ def main():
     env['DCS'] = what
     command = unbuffer + [sys.executable, '-m', 'behave']
     if os.name == 'nt':
-        symbols = list(string.printable.strip())
-        subprocess.call(['net', 'user', 'postgres', '', '/ADD'])
-        command = ['runas', '/user:postgres', ' '.join(command)]
+        command = ['cmd', '/min', '/C', 'set __COMPAT_LAYER=RUNASINVOKER && start ' + ' '.join(command)]
     if subprocess.call(command, env=env) != 0:
         if subprocess.call('grep . features/output/*_failed/*postgres?.*', shell=True) != 0:
             subprocess.call('grep . features/output/*/*postgres?.*', shell=True)
