@@ -1,5 +1,4 @@
 import os
-import random
 import string
 import subprocess
 import sys
@@ -26,10 +25,8 @@ def main():
     command = unbuffer + [sys.executable, '-m', 'behave']
     if os.name == 'nt':
         symbols = list(string.printable.strip())
-        random.shuffle(symbols)
-        passwd = ''.join(symbols[:12])
-        subprocess.call(['net', 'user', 'postgres', passwd, '/ADD'])
-        command = ['PsExec64', '-accepteula', '-user', 'postgres', '-p', passwd, ' '.join(command)]
+        subprocess.call(['net', 'user', 'postgres', '', '/ADD'])
+        command = ['runas', '/user:postgres', ' '.join(command)]
     if subprocess.call(command, env=env) != 0:
         if subprocess.call('grep . features/output/*_failed/*postgres?.*', shell=True) != 0:
             subprocess.call('grep . features/output/*/*postgres?.*', shell=True)

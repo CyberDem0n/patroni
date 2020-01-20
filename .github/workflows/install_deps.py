@@ -96,12 +96,6 @@ def install_etcd():
     return int(unpack(name, '{0}/etcd{1}'.format(dirname, ext)) is None)
 
 
-def install_psexec():
-    name = 'PSTools.zip'
-    get_file('https://download.sysinternals.com/files/' + name, name)
-    return int(unpack(name, 'PsExec64.exe') is None)
-
-
 def install_postgres():
     version = os.environ.get('PGVERSION', '12.1-1')
     platform = {'darwin': 'osx', 'win32': 'windows-x64', 'cygwin': 'windows-x64'}[sys.platform]
@@ -176,8 +170,6 @@ def main():
         r = install_packages(what)
     else:
         r = install_postgres()
-        if r == 0:
-            r = install_psexec()
     if r != 0:
         return r
 
