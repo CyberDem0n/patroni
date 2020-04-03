@@ -7,7 +7,7 @@ import signal
 import subprocess
 import sys
 
-from patroni import PATRONI_ENV_PREFIX
+from patroni import PATRONI_ENV_PREFIX, KUBERNETES_ENV_PREFIX
 
 # avoid spawning the resource tracker process
 if sys.version_info >= (3, 8):  # pragma: no cover
@@ -20,9 +20,9 @@ elif sys.version_info >= (3, 4):  # pragma: no cover
 logger = logging.getLogger(__name__)
 
 STOP_SIGNALS = {
-    'smart': signal.SIGTERM,
-    'fast': signal.SIGINT,
-    'immediate': signal.SIGQUIT,
+    'smart': 'TERM',
+    'fast': 'INT',
+    'immediate': 'QUIT',
 }
 
 
@@ -116,7 +116,7 @@ class PostmasterProcess(psutil.Process):
         if os.name != 'posix':
             return self.pg_ctl_kill(mode, pg_ctl)
         try:
-            self.send_signal(STOP_SIGNALS[mode])
+            self.send_signal(getattr(signal, 'SIG' + STOP_SIGNALS[mode]))
         except psutil.NoSuchProcess:
             return True
         except psutil.AccessDenied as e:
@@ -126,9 +126,8 @@ class PostmasterProcess(psutil.Process):
         return None
 
     def pg_ctl_kill(self, mode, pg_ctl):
-        SIGNALNAME = {"smart": "TERM", "fast": "INT", "immediate": "QUIT"}[mode]
         try:
-            status = subprocess.call([pg_ctl, "kill", SIGNALNAME, str(self.pid)])
+            status = subprocess.call([pg_ctl, "kill", STOP_SIGNALS[mode], str(self.pid)])
         except OSError:
             return False
         if status == 0:
@@ -177,7 +176,8 @@ class PostmasterProcess(psutil.Process):
         # In order to make everything portable we can't use fork&exec approach here, so  we will call
         # ourselves and pass list of arguments which must be used to start postgres.
         # On Windows, in order to run a side-by-side assembly the specified env must include a valid SYSTEMROOT.
-        env = {p: os.environ[p] for p in os.environ if not p.startswith(PATRONI_ENV_PREFIX)}
+        env = {p: os.environ[p] for p in os.environ if not p.startswith(
+            PATRONI_ENV_PREFIX) and not p.startswith(KUBERNETES_ENV_PREFIX)}
         try:
             proc = PostmasterProcess._from_pidfile(data_dir)
             if proc and not proc._is_postmaster_process():

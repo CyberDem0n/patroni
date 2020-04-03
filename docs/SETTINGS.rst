@@ -20,7 +20,7 @@ Dynamic configuration is stored in the DCS (Distributed Configuration Store) and
 -  **synchronous\_mode\_strict**: prevents disabling synchronous replication if no synchronous replicas are available, blocking all client writes to the master. See :ref:`replication modes documentation <replication_modes>` for details.
 -  **postgresql**:
     -  **use\_pg\_rewind**: whether or not to use pg_rewind. Defaults to `false`.
-    -  **use\_slots**: whether or not to use replication_slots. Defaults to `true` on PostgreSQL 9.4+.
+    -  **use\_slots**: whether or not to use replication slots. Defaults to `true` on PostgreSQL 9.4+.
     -  **recovery\_conf**: additional configuration settings written to recovery.conf when configuring follower. There is no recovery.conf anymore in PostgreSQL 12, but you may continue using this section, because Patroni handles it transparently.
     -  **parameters**: list of configuration settings for Postgres.
 -  **standby\_cluster**: if this section is defined, we want to bootstrap a standby cluster.
@@ -32,7 +32,7 @@ Dynamic configuration is stored in the DCS (Distributed Configuration Store) and
     -  **archive\_cleanup\_command**: cleanup command for standby leader
     -  **recovery\_min\_apply\_delay**: how long to wait before actually apply WAL records on a standby leader
 -  **slots**: define permanent replication slots. These slots will be preserved during switchover/failover. Patroni will try to create slots before opening connections to the cluster.
-    -  **my_slot_name**: the name of replication slot. It is the responsibility of the operator to make sure that there are no clashes in names between replication slots automatically created by Patroni for members and permanent replication slots.
+    -  **my_slot_name**: the name of replication slot. If the permanent slot name matches with the name of the current primary it will not be created. Everything else is the responsibility of the operator to make sure that there are no clashes in names between replication slots automatically created by Patroni for members and permanent replication slots.
         -  **type**: slot type. Could be ``physical`` or ``logical``. If the slot is logical, you have to additionally define ``database`` and ``plugin``.
         -  **database**: the database name where logical slots should be created.
         -  **plugin**: the plugin name for the logical slot.
@@ -87,20 +87,20 @@ Consul
 ------
 Most of the parameters are optional, but you have to specify one of the **host** or **url**
 
--  **host**: the host:port for the Consul endpoint, in format: http(s)://host:port
--  **url**: url for the Consul endpoint
--  **port**: (optional) Consul port
--  **scheme**: (optional) **http** or **https**, defaults to **http**
--  **token**: (optional) ACL token
--  **verify**: (optional) whether to verify the SSL certificate for HTTPS requests
+-  **host**: the host:port for the Consul local agent.
+-  **url**: url for the Consul local agent, in format: http(s)://host:port.
+-  **port**: (optional) Consul port.
+-  **scheme**: (optional) **http** or **https**, defaults to **http**.
+-  **token**: (optional) ACL token.
+-  **verify**: (optional) whether to verify the SSL certificate for HTTPS requests.
 -  **cacert**: (optional) The ca certificate. If present it will enable validation.
--  **cert**: (optional) file with the client certificate
+-  **cert**: (optional) file with the client certificate.
 -  **key**: (optional) file with the client key. Can be empty if the key is part of **cert**.
 -  **dc**: (optional) Datacenter to communicate with. By default the datacenter of the host is used.
 -  **consistency**: (optional) Select consul consistency mode. Possible values are ``default``, ``consistent``, or ``stale`` (more details in `consul API reference <https://www.consul.io/api/features/consistency.html/>`__)
 -  **checks**: (optional) list of Consul health checks used for the session. By default an empty list is used.
--  **register\_service**: (optional) whether or not to register a service with the name defined by the scope parameter and the tag master, replica or standby-leader depending on the node's role. Defaults to **false**
--  **service\_check\_interval**: (optional) how often to perform health check against registered url
+-  **register\_service**: (optional) whether or not to register a service with the name defined by the scope parameter and the tag master, replica or standby-leader depending on the node's role. Defaults to **false**.
+-  **service\_check\_interval**: (optional) how often to perform health check against registered url.
 
 Etcd
 ----
@@ -109,8 +109,8 @@ Most of the parameters are optional, but you have to specify one of the **host**
 -  **host**: the host:port for the etcd endpoint.
 -  **hosts**: list of etcd endpoint in format host1:port1,host2:port2,etc... Could be a comma separated string or an actual yaml list.
 -  **use\_proxies**: If this parameter is set to true, Patroni will consider **hosts** as a list of proxies and will not perform a topology discovery of etcd cluster.
--  **url**: url for the etcd
--  **proxy**: proxy url for the etcd. If you are connecting to the etcd using proxy, use this parameter instead of **url**
+-  **url**: url for the etcd.
+-  **proxy**: proxy url for the etcd. If you are connecting to the etcd using proxy, use this parameter instead of **url**.
 -  **srv**: Domain to search the SRV record(s) for cluster autodiscovery.
 -  **protocol**: (optional) http or https, if not specified http is used. If the **url** or **proxy** is specified - will take protocol from them.
 -  **username**: (optional) username for etcd authentication.
@@ -126,7 +126,7 @@ ZooKeeper
 Exhibitor
 ---------
 -  **hosts**: initial list of Exhibitor (ZooKeeper) nodes in format: 'host1,host2,etc...'. This list updates automatically whenever the Exhibitor (ZooKeeper) cluster topology changes.
--  **poll\_interval**: how often the list of ZooKeeper and Exhibitor nodes should be updated from Exhibitor
+-  **poll\_interval**: how often the list of ZooKeeper and Exhibitor nodes should be updated from Exhibitor.
 -  **port**: Exhibitor port.
 
 .. _kubernetes_settings:

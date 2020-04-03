@@ -66,8 +66,11 @@ def dcs_modules():
     module_prefix = __package__ + '.'
 
     if getattr(sys, 'frozen', False):
-        importer = pkgutil.get_importer(dcs_dirname)
-        return [module for module in list(importer.toc) if module.startswith(module_prefix) and module.count('.') == 2]
+        toc = set()
+        for importer in pkgutil.iter_importers(dcs_dirname):
+            if hasattr(importer, 'toc'):
+                toc |= importer.toc
+        return [module for module in toc if module.startswith(module_prefix) and module.count('.') == 2]
     else:
         return [module_prefix + name for _, name, is_pkg in pkgutil.iter_modules([dcs_dirname]) if not is_pkg]
 
@@ -449,21 +452,21 @@ class Cluster(namedtuple('Cluster', 'initialize,config,leader,last_leader_operat
     def is_synchronous_mode(self):
         return self.check_mode('synchronous_mode')
 
-    def get_replication_slots(self, name, role):
+    def get_replication_slots(self, my_name, role):
         # if the replicatefrom tag is set on the member - we should not create the replication slot for it on
         # the current master, because that member would replicate from elsewhere. We still create the slot if
         # the replicatefrom destination member is currently not a member of the cluster (fallback to the
         # master), or if replicatefrom destination member happens to be the current master
         use_slots = self.config and self.config.data.get('postgresql', {}).get('use_slots', True)
         if role in ('master', 'standby_leader'):
-            slot_members = [m.name for m in self.members if use_slots and m.name != name and
-                            (m.replicatefrom is None or m.replicatefrom == name or
+            slot_members = [m.name for m in self.members if use_slots and m.name != my_name and
+                            (m.replicatefrom is None or m.replicatefrom == my_name or
                              not self.has_member(m.replicatefrom))]
             permanent_slots = (self.config and self.config.permanent_slots or {}).copy()
         else:
             # only manage slots for replicas that replicate from this one, except for the leader among them
             slot_members = [m.name for m in self.members if use_slots and
-                            m.replicatefrom == name and m.name != self.leader.name]
+                            m.replicatefrom == my_name and m.name != self.leader.name]
             permanent_slots = {}
 
         slots = {slot_name_from_member_name(name): {'type': 'physical'} for name in slot_members}
@@ -484,22 +487,21 @@ class Cluster(namedtuple('Cluster', 'initialize,config,leader,last_leader_operat
                 logger.error("Slot name may only contain lower case letters, numbers, and the underscore chars")
                 continue
 
-            if name in slots:
-                logger.error("Permanent replication slot {'%s': %s} is conflicting with" +
-                             " physical replication slot for cluster member", name, value)
-                continue
-
-            value = deepcopy(value)
-            if not value:
-                value = {'type': 'physical'}
-
+            value = deepcopy(value) if value else {'type': 'physical'}
             if isinstance(value, dict):
                 if 'type' not in value:
                     value['type'] = 'logical' if value.get('database') and value.get('plugin') else 'physical'
 
-                if value['type'] == 'physical' or value['type'] == 'logical' \
-                        and value.get('database') and value.get('plugin'):
-                    slots[name] = value
+                if value['type'] == 'physical':
+                    if name != my_name:  # Don't try to create permanent physical replication slot for yourself
+                        slots[name] = value
+                    continue
+                elif value['type'] == 'logical' and value.get('database') and value.get('plugin'):
+                    if name in slots:
+                        logger.error("Permanent logical replication slot {'%s': %s} is conflicting with" +
+                                     " physical replication slot for cluster member", name, value)
+                    else:
+                        slots[name] = value
                     continue
 
             logger.error("Bad value for slot '%s' in permanent_slots: %s", name, permanent_slots[name])

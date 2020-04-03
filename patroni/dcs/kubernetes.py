@@ -31,6 +31,13 @@ class KubernetesRetriableException(k8s_client.rest.ApiException):
         self.body = orig.body
         self.headers = orig.headers
 
+    @property
+    def sleeptime(self):
+        try:
+            return int(self.headers['retry-after'])
+        except Exception:
+            return None
+
 
 class CoreV1ApiProxy(object):
 
@@ -41,8 +48,22 @@ class CoreV1ApiProxy(object):
         self._request_timeout = None
         self._use_endpoints = use_endpoints
 
-    def set_timeout(self, timeout):
-        self._request_timeout = (1, timeout / 3.0)
+    def configure_timeouts(self, loop_wait, retry_timeout, ttl):
+        # Normally every loop_wait seconds we should have receive something from the socket.
+        # If we didn't received anything after the loop_wait + retry_timeout it is a time
+        # to start worrying (send keepalive messages). Finally, the connection should be
+        # considered as dead if we received nothing from the socket after the ttl seconds.
+        cnt = 3
+        idle = int(loop_wait + retry_timeout)
+        intvl = max(1, int(float(ttl - idle) / cnt))
+        self._api.api_client.rest_client.pool_manager.connection_pool_kw['socket_options'] = [
+            (socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1),
+            (socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, idle),
+            (socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, intvl),
+            (socket.IPPROTO_TCP, socket.TCP_KEEPCNT, cnt),
+            (socket.IPPROTO_TCP, 18, int(ttl * 1000))  # TCP_USER_TIMEOUT
+        ]
+        self._request_timeout = (1, retry_timeout / 3.0)
 
     def __getattr__(self, func):
         if func.endswith('_kind'):
@@ -54,7 +75,7 @@ class CoreV1ApiProxy(object):
             try:
                 return getattr(self._api, func)(*args, **kwargs)
             except k8s_client.rest.ApiException as e:
-                if e.status in (502, 503, 504):  # XXX
+                if e.status in (502, 503, 504) or e.headers and 'retry-after' in e.headers:  # XXX
                     raise KubernetesRetriableException(e)
                 raise
         return wrapper
@@ -92,7 +113,11 @@ class ObjectCache(Thread):
         self.start()
 
     def _list(self):
-        return self._func(_request_timeout=(self._retry.deadline, Timeout.DEFAULT_TIMEOUT))
+        try:
+            return self._func(_request_timeout=(self._retry.deadline, Timeout.DEFAULT_TIMEOUT))
+        except Exception:
+            time.sleep(1)
+            raise
 
     def _watch(self, resource_version):
         return self._func(_request_timeout=(self._retry.deadline, Timeout.DEFAULT_TIMEOUT),
@@ -210,8 +235,7 @@ class Kubernetes(AbstractDCS):
             self.__subsets = [k8s_client.V1EndpointSubset(addresses=addresses, ports=ports)]
             self._should_create_config_service = True
         self._api = CoreV1ApiProxy(use_endpoints)
-        self.set_retry_timeout(config['retry_timeout'])
-        self.set_ttl(config.get('ttl') or 30)
+        self.reload_config(config)
         self._leader_observed_record = {}
         self._leader_observed_time = None
         self._leader_resource_version = None
@@ -250,7 +274,10 @@ class Kubernetes(AbstractDCS):
 
     def set_retry_timeout(self, retry_timeout):
         self._retry.deadline = retry_timeout
-        self._api.set_timeout(retry_timeout)
+
+    def reload_config(self, config):
+        super(Kubernetes, self).reload_config(config)
+        self._api.configure_timeouts(self.loop_wait, self._retry.deadline, self.ttl)
 
     @staticmethod
     def member(pod):

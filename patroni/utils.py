@@ -334,7 +334,7 @@ class Retry(object):
                     logger.warning('Retry got exception: %s', e)
                     raise RetryFailedError("Too many retry attempts")
                 self._attempts += 1
-                sleeptime = self.sleeptime
+                sleeptime = hasattr(e, 'sleeptime') and e.sleeptime or self.sleeptime
 
                 if self._cur_stoptime is not None and time.time() + sleeptime >= self._cur_stoptime:
                     logger.warning('Retry got exception: %s', e)
@@ -442,3 +442,9 @@ def validate_directory(d, msg="{} {}"):
             raise PatroniException(msg.format(d, "the directory is not writable"))
     else:
         raise PatroniException(msg.format(d, "is not a directory"))
+
+
+def data_directory_is_empty(data_dir):
+    if not os.path.exists(data_dir):
+        return True
+    return all(os.name != 'nt' and (n.startswith('.') or n == 'lost+found') for n in os.listdir(data_dir))

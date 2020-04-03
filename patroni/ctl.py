@@ -6,6 +6,7 @@ import click
 import codecs
 import datetime
 import dateutil.parser
+import dateutil.tz
 import cdiff
 import copy
 import difflib
@@ -19,7 +20,6 @@ import subprocess
 import sys
 import tempfile
 import time
-import tzlocal
 import yaml
 
 from click import ClickException
@@ -49,11 +49,11 @@ class PatroniCtlException(ClickException):
 def parse_dcs(dcs):
     if dcs is None:
         return None
+    elif '//' not in dcs:
+        dcs = '//' + dcs
 
     parsed = urlparse(dcs)
     scheme = parsed.scheme
-    if scheme == '' and parsed.netloc == '':
-        parsed = urlparse('//' + dcs)
     port = int(parsed.port) if parsed.port else None
 
     if scheme == '':
@@ -69,7 +69,11 @@ def load_config(path, dcs):
     from patroni.config import Config
 
     if not (os.path.exists(path) and os.access(path, os.R_OK)):
-        logging.debug('Ignoring configuration file "%s". It does not exists or is not readable.', path)
+        if path != CONFIG_FILE_PATH:    # bail if non-default config location specified but file not found / readable
+            raise PatroniCtlException('Provided config file {0} not existing or no read rights.'
+                                      ' Check the -c/--config-file parameter'.format(path))
+        else:
+            logging.debug('Ignoring configuration file "%s". It does not exists or is not readable.', path)
     else:
         logging.debug('Loading configuration from file %s', path)
     config = Config(path, validator=None).copy()
@@ -445,7 +449,7 @@ def parse_scheduled(scheduled):
         try:
             scheduled_at = dateutil.parser.parse(scheduled)
             if scheduled_at.tzinfo is None:
-                scheduled_at = tzlocal.get_localzone().localize(scheduled_at)
+                scheduled_at = scheduled_at.replace(tzinfo=dateutil.tz.tzlocal())
         except (ValueError, TypeError):
             message = 'Unable to parse scheduled timestamp ({0}). It should be in an unambiguous format (e.g. ISO 8601)'
             raise PatroniCtlException(message.format(scheduled))
@@ -726,7 +730,7 @@ def output_members(cluster, name, extended=False, fmt='pretty'):
     cluster = cluster_as_json(cluster)
 
     columns = ['Cluster', 'Member', 'Host', 'Role', 'State', 'TL', 'Lag in MB']
-    for c in ('Pending restart', 'Scheduled restart'):
+    for c in ('Pending restart', 'Scheduled restart', 'Tags'):
         if extended or any(m.get(c.lower().replace(' ', '_')) for m in cluster['members']):
             columns.append(c)
 
@@ -741,7 +745,8 @@ def output_members(cluster, name, extended=False, fmt='pretty'):
         m.update(cluster=name, member=m['name'], tl=m.get('timeline', ''),
                  role='' if m['role'] == 'replica' else m['role'].replace('_', ' ').title(),
                  lag_in_mb=round(lag/1024/1024) if isinstance(lag, six.integer_types) else lag,
-                 pending_restart='*' if m.get('pending_restart') else '')
+                 pending_restart='*' if m.get('pending_restart') else '',
+                 tags=json.dumps(m['tags']) if m.get('tags') else '')
 
         if append_port:
             m['host'] = ':'.join([m['host'], str(m['port'])])
@@ -754,7 +759,7 @@ def output_members(cluster, name, extended=False, fmt='pretty'):
 
         rows.append([m.get(n.lower().replace(' ', '_'), '') for n in columns])
 
-    print_output(columns, rows, {'Lag in MB': 'r', 'TL': 'r'}, fmt)
+    print_output(columns, rows, {'Lag in MB': 'r', 'TL': 'r', 'Tags': 'l'}, fmt)
 
     if fmt != 'pretty':  # Omit service info when using machine-readable formats
         return
@@ -867,7 +872,7 @@ def scaffold(obj, cluster_name, sysid):
     click.echo("Cluster {0} has been created successfully".format(cluster_name))
 
 
-@ctl.command('flush', help='Flush scheduled events')
+@ctl.command('flush', help='Discard scheduled events (restarts only currently)')
 @click.argument('cluster_name')
 @click.argument('member_names', nargs=-1)
 @click.argument('target', type=click.Choice(['restart']))
