@@ -1,6 +1,7 @@
 import copy
 import os
 import socket
+import tempfile
 import unittest
 
 from mock import Mock, patch, mock_open
@@ -57,8 +58,8 @@ config = {
             "superuser": {"username": "user"},
             "rewind": {"username": "user"},
         },
-        "data_dir": "/tmp/data_dir",
-        "bin_dir": "/tmp/bin_dir",
+        "data_dir": os.path.join(tempfile.gettempdir(), "data_dir"),
+        "bin_dir": os.path.join(tempfile.gettempdir(), "bin_dir"),
         "parameters": {
             "unix_socket_directories": "."
         },
