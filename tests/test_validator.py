@@ -85,6 +85,8 @@ files = []
 
 
 def isfile_side_effect(arg):
+    if arg.endswith('.exe'):
+        arg = arg[:-4]
     return arg in files
 
 
