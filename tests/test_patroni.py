@@ -44,6 +44,10 @@ class TestPatroni(unittest.TestCase):
     def test_no_config(self):
         self.assertRaises(SystemExit, patroni_main)
 
+    @patch('sys.argv', ['patroni.py', '--validate-config', 'postgres0.yml'])
+    def test_validate_config(self):
+        self.assertRaises(SystemExit, patroni_main)
+
     @patch('pkgutil.iter_importers', Mock(return_value=[MockFrozenImporter()]))
     @patch('sys.frozen', Mock(return_value=True), create=True)
     @patch.object(BaseHTTPServer.HTTPServer, '__init__', Mock())

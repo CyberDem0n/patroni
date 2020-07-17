@@ -140,10 +140,10 @@ class Member(namedtuple('Member', 'index,name,session,data')):
     @property
     def conn_url(self):
         conn_url = self.data.get('conn_url')
-        conn_kwargs = self.data.get('conn_kwargs')
         if conn_url:
             return conn_url
 
+        conn_kwargs = self.data.get('conn_kwargs')
         if conn_kwargs:
             conn_url = uri('postgresql', (conn_kwargs.get('host'), conn_kwargs.get('port', 5432)))
             self.data['conn_url'] = conn_url
@@ -151,16 +151,19 @@ class Member(namedtuple('Member', 'index,name,session,data')):
 
     def conn_kwargs(self, auth=None):
         defaults = {
-            "host": "",
-            "port": "",
-            "database": ""
+            "host": None,
+            "port": None,
+            "database": None
         }
         ret = self.data.get('conn_kwargs')
         if ret:
             defaults.update(ret)
             ret = defaults
         else:
-            r = urlparse(self.conn_url)
+            conn_url = self.conn_url
+            if not conn_url:
+                return {}  # due to the invalid conn_url we don't care about authentication parameters
+            r = urlparse(conn_url)
             ret = {
                 'host': r.hostname,
                 'port': r.port or 5432,
@@ -337,6 +340,10 @@ class ClusterConfig(namedtuple('ClusterConfig', 'index,data,modify_index')):
                 self.data.get('permanent_replication_slots') or
                 self.data.get('permanent_slots') or self.data.get('slots')
         ) or {}
+
+    @property
+    def max_timelines_history(self):
+        return self.data.get('max_timelines_history', 0)
 
 
 class SyncState(namedtuple('SyncState', 'index,leader,sync_standby')):
@@ -635,7 +642,12 @@ class AbstractDCS(object):
            If the current node was running as a master and exception raised,
            instance would be demoted."""
 
-    def get_cluster(self):
+    def _bypass_caches(self):
+        """Used only in zookeeper"""
+
+    def get_cluster(self, force=False):
+        if force:
+            self._bypass_caches()
         try:
             cluster = self._load_cluster()
         except Exception:
@@ -751,9 +763,18 @@ class AbstractDCS(object):
         otherwise it should return `!False`"""
 
     @abc.abstractmethod
-    def delete_leader(self):
-        """Voluntarily remove leader key from DCS
+    def _delete_leader(self):
+        """Remove leader key from DCS.
         This method should remove leader key if current instance is the leader"""
+
+    def delete_leader(self, last_operation=None):
+        """Update optime/leader and voluntarily remove leader key from DCS.
+        This method should remove leader key if current instance is the leader.
+        :param last_operation: latest checkpoint location in bytes"""
+
+        if last_operation:
+            self.write_leader_optime(last_operation)
+        return self._delete_leader()
 
     @abc.abstractmethod
     def cancel_initialization(self):
