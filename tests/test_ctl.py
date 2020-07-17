@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from mock import patch, Mock
 from patroni.ctl import ctl, store_config, load_config, output_members, get_dcs, parse_dcs, \
     get_all_members, get_any_member, get_cursor, query_member, configure, PatroniCtlException, apply_config_changes, \
-    format_config_for_editing, show_diff, invoke_editor, format_pg_version, find_executable
+    format_config_for_editing, show_diff, invoke_editor, format_pg_version, find_executable, CONFIG_FILE_PATH
 from patroni.dcs.etcd import Client, Failover
 from patroni.utils import tzutc
 from psycopg2 import OperationalError
@@ -18,21 +18,21 @@ from .test_etcd import etcd_read, socket_getaddrinfo
 from .test_ha import get_cluster_initialized_without_leader, get_cluster_initialized_with_leader, \
     get_cluster_initialized_with_only_leader, get_cluster_not_initialized_without_leader, get_cluster, Member
 
-CONFIG_FILE_PATH = './test-ctl.yaml'
-
 
 def test_rw_config():
     runner = CliRunner()
     with runner.isolated_filesystem():
-        store_config({'etcd': {'host': 'localhost:2379'}}, CONFIG_FILE_PATH + '/dummy')
-        load_config(CONFIG_FILE_PATH + '/dummy', '0.0.0.0')
-        os.remove(CONFIG_FILE_PATH + '/dummy')
-        os.rmdir(CONFIG_FILE_PATH)
+        load_config(CONFIG_FILE_PATH, None)
+        CONFIG_PATH = './test-ctl.yaml'
+        store_config({'etcd': {'host': 'localhost:2379'}}, CONFIG_PATH + '/dummy')
+        load_config(CONFIG_PATH + '/dummy', '0.0.0.0')
+        os.remove(CONFIG_PATH + '/dummy')
+        os.rmdir(CONFIG_PATH)
 
 
-@patch('patroni.ctl.load_config',
-       Mock(return_value={'scope': 'alpha', 'postgresql': {'data_dir': '.', 'pgpass': './pgpass', 'parameters': {}, 'retry_timeout': 5},
-                          'restapi': {'listen': '::', 'certfile': 'a'}, 'etcd': {'host': 'localhost:2379'}}))
+@patch('patroni.ctl.load_config', Mock(return_value={
+    'scope': 'alpha', 'restapi': {'listen': '::', 'certfile': 'a'}, 'etcd': {'host': 'localhost:2379'},
+    'postgresql': {'data_dir': '.', 'pgpass': './pgpass', 'parameters': {}, 'retry_timeout': 5}}))
 class TestCtl(unittest.TestCase):
 
     @patch('socket.getaddrinfo', socket_getaddrinfo)
@@ -42,11 +42,11 @@ class TestCtl(unittest.TestCase):
             self.runner = CliRunner()
             self.e = get_dcs({'etcd': {'ttl': 30, 'host': 'ok:2379', 'retry_timeout': 10}}, 'foo')
 
-    def test_abort_on_missing_or_unaccessible_config(self):
+    def test_load_config(self):
         runner = CliRunner()
         with runner.isolated_filesystem():
-            with self.assertRaises(PatroniCtlException):
-                load_config('./non-existing-config-file', None)
+            self.assertRaises(PatroniCtlException, load_config, './non-existing-config-file', None)
+            self.assertRaises(PatroniCtlException, load_config, './non-existing-config-file', None)
 
     @patch('psycopg2.connect', psycopg2_connect)
     def test_get_cursor(self):
@@ -72,10 +72,9 @@ class TestCtl(unittest.TestCase):
     def test_output_members(self):
         scheduled_at = datetime.now(tzutc) + timedelta(seconds=600)
         cluster = get_cluster_initialized_with_leader(Failover(1, 'foo', 'bar', scheduled_at))
-        self.assertIsNone(output_members(cluster, name='abc', fmt='pretty'))
-        self.assertIsNone(output_members(cluster, name='abc', fmt='json'))
-        self.assertIsNone(output_members(cluster, name='abc', fmt='yaml'))
-        self.assertIsNone(output_members(cluster, name='abc', fmt='tsv'))
+        del cluster.members[1].data['conn_url']
+        for fmt in ('pretty', 'json', 'yaml', 'tsv', 'topology'):
+            self.assertIsNone(output_members(cluster, name='abc', fmt=fmt))
 
     @patch('patroni.ctl.get_dcs')
     @patch.object(PoolManager, 'request', Mock(return_value=MockResponse()))
@@ -204,9 +203,6 @@ class TestCtl(unittest.TestCase):
         with patch('patroni.ctl.get_cursor', Mock(return_value=MockConnect().cursor())):
             rows = query_member(None, None, None, 'master', 'SELECT pg_catalog.pg_is_in_recovery()', {})
             self.assertTrue('False' in str(rows))
-
-            rows = query_member(None, None, None, 'replica', 'SELECT pg_catalog.pg_is_in_recovery()', {})
-            self.assertEqual(rows, (None, None))
 
             with patch.object(MockCursor, 'execute', Mock(side_effect=OperationalError('bla'))):
                 rows = query_member(None, None, None, 'replica', 'SELECT pg_catalog.pg_is_in_recovery()', {})
@@ -422,8 +418,38 @@ class TestCtl(unittest.TestCase):
         assert 'Scheduled restart' in result.output
 
     @patch('patroni.ctl.get_dcs')
+    def test_topology(self, mock_get_dcs):
+        mock_get_dcs.return_value = self.e
+        cluster = get_cluster_initialized_with_leader()
+        cascade_member = Member(0, 'cascade', 28, {'conn_url': 'postgres://replicator:rep-pass@127.0.0.1:5437/postgres',
+                                                   'api_url': 'http://127.0.0.1:8012/patroni',
+                                                   'state': 'running',
+                                                   'tags': {'replicatefrom': 'other'},
+                                                   })
+        cascade_member_wrong_tags = Member(0, 'wrong_cascade', 28,
+                                           {'conn_url': 'postgres://replicator:rep-pass@127.0.0.1:5438/postgres',
+                                            'api_url': 'http://127.0.0.1:8013/patroni',
+                                            'state': 'running',
+                                            'tags': {'replicatefrom': 'nonexistinghost'},
+                                            })
+        cluster.members.append(cascade_member)
+        cluster.members.append(cascade_member_wrong_tags)
+        mock_get_dcs.return_value.get_cluster = Mock(return_value=cluster)
+        result = self.runner.invoke(ctl, ['topology', 'dummy'])
+        assert '+\n| leader          | 127.0.0.1:5435 |  Leader |' in result.output
+        assert '|\n| + other         | 127.0.0.1:5436 | Replica |' in result.output
+        assert '|\n|   + cascade     | 127.0.0.1:5437 | Replica |' in result.output
+        assert '|\n| + wrong_cascade | 127.0.0.1:5438 | Replica |' in result.output
+
+        cluster = get_cluster_initialized_without_leader()
+        mock_get_dcs.return_value.get_cluster = Mock(return_value=cluster)
+        result = self.runner.invoke(ctl, ['topology', 'dummy'])
+        assert '+\n| + leader | 127.0.0.1:5435 | Replica |' in result.output
+        assert '|\n| + other  | 127.0.0.1:5436 | Replica |' in result.output
+
+    @patch('patroni.ctl.get_dcs')
     @patch.object(PoolManager, 'request', Mock(return_value=MockResponse()))
-    def test_flush(self, mock_get_dcs):
+    def test_flush_restart(self, mock_get_dcs):
         mock_get_dcs.return_value = self.e
         mock_get_dcs.return_value.get_cluster = get_cluster_initialized_with_leader
 
@@ -435,6 +461,26 @@ class TestCtl(unittest.TestCase):
         with patch.object(PoolManager, 'request', return_value=MockResponse(404)):
             result = self.runner.invoke(ctl, ['flush', 'dummy', 'restart', '--force'])
             assert 'Failed: flush scheduled restart' in result.output
+
+    @patch('patroni.ctl.get_dcs')
+    @patch.object(PoolManager, 'request', Mock(return_value=MockResponse()))
+    def test_flush_switchover(self, mock_get_dcs):
+        mock_get_dcs.return_value = self.e
+
+        mock_get_dcs.return_value.get_cluster = get_cluster_initialized_with_leader
+        result = self.runner.invoke(ctl, ['flush', 'dummy', 'switchover'])
+        assert 'No pending scheduled switchover' in result.output
+
+        scheduled_at = datetime.now(tzutc) + timedelta(seconds=600)
+        mock_get_dcs.return_value.get_cluster = Mock(
+                return_value=get_cluster_initialized_with_leader(Failover(1, 'a', 'b', scheduled_at)))
+        result = self.runner.invoke(ctl, ['flush', 'dummy', 'switchover'])
+        assert result.output.startswith('Success: ')
+
+        mock_get_dcs.return_value.manual_failover = Mock()
+        with patch.object(PoolManager, 'request', side_effect=[MockResponse(409), Exception]):
+            result = self.runner.invoke(ctl, ['flush', 'dummy', 'switchover'])
+            assert 'Could not find any accessible member of cluster' in result.output
 
     @patch.object(PoolManager, 'request')
     @patch('patroni.ctl.get_dcs')
