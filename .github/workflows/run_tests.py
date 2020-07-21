@@ -22,6 +22,8 @@ def main():
     env['PATH'] = path + os.pathsep + env['PATH']
     env['DCS'] = what
     if os.name == 'nt':
+        print(env)
+        subprocess.call(['pgsql/bin/postgres', '-V'])
         subprocess.call(['initdb', '-D', 'data', '-U', 'postgres'], env=env)
         subprocess.call(['pg_ctl', '-D', 'data', 'start'], env=env)
         subprocess.call(['psql', '-U', 'postgres', '-c', 'SELECT version()'], env=env)
