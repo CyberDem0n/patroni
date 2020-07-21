@@ -26,6 +26,7 @@ def main():
         subprocess.call(['pg_ctl', '-D', 'data', 'start'], env=env)
         subprocess.call(['psql', '-U', 'postgres', '-c', 'SELECT version()'], env=env)
         return 0
+
     if subprocess.call(unbuffer + [sys.executable, '-m', 'behave'], env=env) != 0:
         if subprocess.call('grep . features/output/*_failed/*postgres?.*', shell=True) != 0:
             subprocess.call('grep . features/output/*/*postgres?.*', shell=True)
