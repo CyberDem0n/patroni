@@ -24,13 +24,13 @@ def main():
     kwargs = {'env': env}
     if os.name == 'nt':
         kwargs['creationflags'] = getattr(subprocess, 'CREATE_NEW_CONSOLE')
-#        print(os.getcwd())
-#        print(env)
-#        subprocess.call(['pgsql/bin/postgres', '-V'])
-#        subprocess.call(['pgsql/bin/initdb', '-D', 'data', '-U', 'postgres'], env=env)
-#        subprocess.call(['pgsql/bin/pg_ctl', '-D', 'data', 'start'], env=env)
-#        subprocess.call(['pgsql/bin/psql', '-U', 'postgres', '-c', 'SELECT version()'], env=env)
-#        return 0
+        print(os.getcwd())
+        print(env)
+        subprocess.call(['pgsql/bin/postgres', '-V'])
+        subprocess.call(['pgsql/bin/pg_ctl', 'initdb', '-D', 'data', '-U', 'postgres'], env=env)
+        subprocess.call(['pgsql/bin/pg_ctl', '-D', 'data', 'start'], env=env)
+        subprocess.call(['pgsql/bin/psql', '-U', 'postgres', '-c', 'SELECT version()'], env=env)
+        return 0
 
     if subprocess.call(unbuffer + [sys.executable, '-m', 'behave'], **kwargs) != 0:
         if subprocess.call('grep . features/output/*_failed/*postgres?.*', shell=True) != 0:
