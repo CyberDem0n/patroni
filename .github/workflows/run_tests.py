@@ -21,10 +21,7 @@ def main():
         unbuffer = []
     env['PATH'] = path + os.pathsep + env['PATH']
     env['DCS'] = what
-    command = unbuffer + [sys.executable, '-m', 'behave']
-    if os.name == 'nt':
-        command = ['cmd', '/min', '/C', 'set __COMPAT_LAYER=RUNASINVOKER && start ' + ' '.join(command)]
-    if subprocess.call(command, env=env) != 0:
+    if subprocess.call(unbuffer + [sys.executable, '-m', 'behave'], env=env) != 0:
         if subprocess.call('grep . features/output/*_failed/*postgres?.*', shell=True) != 0:
             subprocess.call('grep . features/output/*/*postgres?.*', shell=True)
         return 1
