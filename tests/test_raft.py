@@ -53,6 +53,8 @@ def remove_files(*files):
                         break
                 except Exception:
                     time.sleep(1.0)
+            else:
+                raise Exception('Failed to remove file {0}'.format(f))
 
 
 class TestKVStoreTTL(unittest.TestCase):

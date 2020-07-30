@@ -156,6 +156,7 @@ class KVStoreTTL(DynMemberSyncObj):
             event.clear()
             func(*args, **kwargs)
             event.wait(timeout)
+            logger.error('result=%s, error=%s', ret['result'], ret['error'])
             if ret['error'] == FAIL_REASON.SUCCESS:
                 return ret['result']
             elif ret['error'] == FAIL_REASON.REQUEST_DENIED:
