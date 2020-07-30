@@ -1,5 +1,6 @@
 import logging
 import os
+import time
 import unittest
 
 from mock import Mock, patch
@@ -17,8 +18,16 @@ class TestPatroniRaftController(unittest.TestCase):
     def remove_files(self):
         for f in ('journal', 'dump'):
             f = self.SELF_ADDR + '.' + f
-            if os.path.exists(f):
-                os.unlink(f)
+            if os.path.isfile(f):
+                for i in range(0, 15):
+                    try:
+                        if os.path.isfile(f):
+                            os.unlink(f)
+                            break
+                        else:
+                            break
+                    except Exception:
+                        time.sleep(1.0)
 
     @patch('pysyncobj.tcp_server.TcpServer.bind', Mock())
     def setUp(self):
