@@ -22,16 +22,16 @@ def main():
         unbuffer = []
     env['PATH'] = path + os.pathsep + env['PATH']
     env['DCS'] = what
-    kwargs = {'env': env}
     if os.name == 'nt':
         subprocess.call(['pgsql/bin/postgres', '-V'])
         subprocess.call(['pgsql/bin/pg_ctl', 'initdb', '-D', 'fake', '-U', 'postgres'])
         env['COMSPEC'] = sys.executable + '"' + ' "' + os.path.abspath('.github/workflows/run_behave_windows.py')
-        subprocess.call(['pgsql/bin/pg_ctl', '-W', '-D', 'fake', '-l', 'behave.log', 'start'], **kwargs)
+        subprocess.call([sys.executable, '-c', 'import os; print(os.environ)'], env=env)
+        subprocess.call(['pg_ctl', '-W', '-D', 'fake', '-l', 'behave.log', 'start'], env=env)
         time.sleep(1)
         with open('behave.log') as f:
             p = 0
-            while True:
+            for _ in range(0, 600):
                 f.seek(p)
                 latest_data = f.read()
                 p = f.tell()
@@ -39,10 +39,11 @@ def main():
                     print(latest_data)
                 elif os.path.exists('behave.exit'):
                     break
+                time.sleep(1)
         with open('behave.exit') as f:
             ret = int(f.read())
     else:
-        ret = subprocess.call(unbuffer + [sys.executable, '-m', 'behave'], **kwargs)
+        ret = subprocess.call(unbuffer + [sys.executable, '-m', 'behave'], env=env)
 
     if ret != 0:
         if subprocess.call('grep . features/output/*_failed/*postgres?.*', shell=True) != 0:
