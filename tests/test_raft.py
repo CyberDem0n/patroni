@@ -41,6 +41,20 @@ class TestDynMemberSyncObj(unittest.TestCase):
         utility._onMessageReceived(0, '')
 
 
+def remove_files(files):
+    for f in (files):
+        if os.path.isfile(f):
+            for i in range(0, 15):
+                try:
+                    if os.path.isfile(f):
+                        os.unlink(f)
+                        break
+                    else:
+                        break
+                except Exception:
+                    time.sleep(1.0)
+
+
 class TestKVStoreTTL(unittest.TestCase):
 
     def setUp(self):
@@ -59,8 +73,7 @@ class TestKVStoreTTL(unittest.TestCase):
     def tearDown(self):
         if self.so:
             self.destroy(self.so)
-        if os.path.exists('foo.journal'):
-            os.unlink('foo.journal')
+        remove_files('foo.journal')
 
     def test_set(self):
         self.assertTrue(self.so.set('foo', 'bar', prevExist=False, ttl=30))
@@ -128,10 +141,7 @@ class TestRaft(unittest.TestCase):
         raft._sync_obj._SyncObj__thread.join()
 
     def tearDown(self):
-        for f in ('journal', 'dump'):
-            f = '127.0.0.1:1234.' + f
-            if os.path.exists(f):
-                os.unlink(f)
+        remove_files('127.0.0.1:1234.journal', '127.0.0.1:1234.dump')
 
     def setUp(self):
         self.tearDown()
