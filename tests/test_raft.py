@@ -58,6 +58,7 @@ def remove_files(*files):
 class TestKVStoreTTL(unittest.TestCase):
 
     def setUp(self):
+        remove_files('foo.journal')
         self.conf = SyncObjConf(appendEntriesUseBatch=False, appendEntriesPeriod=0.001, journalFile='foo.journal',
                                 raftMinTimeout=0.004, raftMaxTimeout=0.005, autoTickPeriod=0.001)
         callback = Mock()
@@ -85,7 +86,7 @@ class TestKVStoreTTL(unittest.TestCase):
         self.so.set('foo', 'bar')
         self.so.set('fooo', 'bar')
         self.assertFalse(self.so.delete('foo', prevValue='buz'))
-        self.assertFalse(self.so.delete('foo', prevValue='bar', timeout=0.00001))
+        self.assertFalse(self.so.delete('foo', prevValue='bar', timeout=0.0000001))
         self.assertFalse(self.so.delete('foo', prevValue='bar'))
         self.assertTrue(self.so.delete('foo', recursive=True))
         self.assertFalse(self.so.retry(self.so._delete, 'foo', prevValue=''))
