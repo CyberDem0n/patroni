@@ -41,7 +41,7 @@ class TestDynMemberSyncObj(unittest.TestCase):
         utility._onMessageReceived(0, '')
 
 
-def remove_files(files):
+def remove_files(*files):
     for f in (files):
         if os.path.isfile(f):
             for i in range(0, 15):
