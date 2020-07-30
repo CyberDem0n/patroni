@@ -86,7 +86,7 @@ class TestKVStoreTTL(unittest.TestCase):
         self.so.set('foo', 'bar')
         self.so.set('fooo', 'bar')
         self.assertFalse(self.so.delete('foo', prevValue='buz'))
-        self.assertFalse(self.so.delete('foo', prevValue='bar', timeout=0.0000001))
+        self.assertFalse(self.so.delete('foo', prevValue='bar', timeout=0.000001))
         self.assertFalse(self.so.delete('foo', prevValue='bar'))
         self.assertTrue(self.so.delete('foo', recursive=True))
         self.assertFalse(self.so.retry(self.so._delete, 'foo', prevValue=''))
