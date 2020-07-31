@@ -41,8 +41,9 @@ class TestDynMemberSyncObj(unittest.TestCase):
         utility._onMessageReceived(0, '')
 
 
-def remove_files(*files):
-    for f in (files):
+def remove_files(prefix):
+    for f in ('journal', 'dump'):
+        f = prefix + f
         if os.path.isfile(f):
             for i in range(0, 15):
                 try:
@@ -60,8 +61,7 @@ def remove_files(*files):
 class TestKVStoreTTL(unittest.TestCase):
 
     def setUp(self):
-        remove_files('foo.journal')
-        self.conf = SyncObjConf(appendEntriesUseBatch=False, appendEntriesPeriod=0.001, journalFile='foo.journal',
+        self.conf = SyncObjConf(appendEntriesUseBatch=False, appendEntriesPeriod=0.001,
                                 raftMinTimeout=0.004, raftMaxTimeout=0.005, autoTickPeriod=0.001)
         callback = Mock()
         callback.replicated = False
@@ -76,7 +76,6 @@ class TestKVStoreTTL(unittest.TestCase):
     def tearDown(self):
         if self.so:
             self.destroy(self.so)
-        remove_files('foo.journal')
 
     def test_set(self):
         self.assertTrue(self.so.set('foo', 'bar', prevExist=False, ttl=30))
@@ -88,7 +87,8 @@ class TestKVStoreTTL(unittest.TestCase):
         self.so.set('foo', 'bar')
         self.so.set('fooo', 'bar')
         self.assertFalse(self.so.delete('foo', prevValue='buz'))
-        self.assertFalse(self.so.delete('foo', prevValue='bar', timeout=0.000001))
+        with patch('threading.Event.wait', Mock()):
+            self.assertFalse(self.so.delete('foo', prevValue='bar', timeout=0.00001))
         self.assertFalse(self.so.delete('foo', prevValue='bar'))
         self.assertTrue(self.so.delete('foo', recursive=True))
         self.assertFalse(self.so.retry(self.so._delete, 'foo', prevValue=''))
@@ -144,7 +144,7 @@ class TestRaft(unittest.TestCase):
         raft._sync_obj._SyncObj__thread.join()
 
     def tearDown(self):
-        remove_files('127.0.0.1:1234.journal', '127.0.0.1:1234.dump')
+        remove_files('127.0.0.1:1234.')
 
     def setUp(self):
         self.tearDown()
