@@ -25,7 +25,7 @@ def main():
     if os.name == 'nt':
         subprocess.call(['pgsql/bin/postgres', '-V'])
         subprocess.call(['pgsql/bin/pg_ctl', 'initdb', '-D', 'fake', '-U', 'postgres'])
-        env['COMSPEC'] = sys.executable + " -c 'import os; print(os.environ)'"
+        env['COMSPEC'] = sys.executable + '"' + ' "-c" "import os; print(os.environ)'
         subprocess.call([sys.executable, '-c', "import subprocess; subprocess.call('true', shell=True)"], env=env)
         env['COMSPEC'] = sys.executable + '"' + ' "' + os.path.abspath('.github/workflows/run_behave_windows.py')
         subprocess.call(['pg_ctl', '-W', '-D', 'fake', '-l', 'behave.log', 'start'], env=env)
