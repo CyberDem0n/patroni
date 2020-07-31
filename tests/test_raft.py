@@ -84,11 +84,11 @@ class TestKVStoreTTL(unittest.TestCase):
         self.assertTrue(self.so.retry(self.so._set, 'foo', {'value': 'buz', 'created': 1, 'updated': 1}))
 
     def test_delete(self):
+        self.conf.autoTickPeriod = 0.1
         self.so.set('foo', 'bar')
         self.so.set('fooo', 'bar')
         self.assertFalse(self.so.delete('foo', prevValue='buz'))
-        with patch('threading.Event.wait', Mock()):
-            self.assertFalse(self.so.delete('foo', prevValue='bar', timeout=0.00001))
+        self.assertFalse(self.so.delete('foo', prevValue='bar', timeout=0.00001))
         self.assertFalse(self.so.delete('foo', prevValue='bar'))
         self.assertTrue(self.so.delete('foo', recursive=True))
         self.assertFalse(self.so.retry(self.so._delete, 'foo', prevValue=''))
