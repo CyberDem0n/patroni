@@ -7,6 +7,21 @@ from patroni.dcs.raft import DynMemberSyncObj, KVStoreTTL, Raft, SyncObjUtility
 from pysyncobj import SyncObjConf, FAIL_REASON
 
 
+def remove_files(prefix):
+    for f in ('journal', 'dump'):
+        f = prefix + f
+        if os.path.isfile(f):
+            for i in range(0, 15):
+                try:
+                    if os.path.isfile(f):
+                        os.unlink(f)
+                        break
+                    else:
+                        break
+                except Exception:
+                    time.sleep(1.0)
+
+
 @patch('pysyncobj.tcp_server.TcpServer.bind', Mock())
 class TestDynMemberSyncObj(unittest.TestCase):
 
@@ -39,21 +54,6 @@ class TestDynMemberSyncObj(unittest.TestCase):
         utility.setPartnerNode(list(utility._SyncObj__otherNodes)[0])
         utility.sendMessage(['members'])
         utility._onMessageReceived(0, '')
-
-
-def remove_files(prefix):
-    for f in ('journal', 'dump'):
-        f = prefix + f
-        if os.path.isfile(f):
-            for i in range(0, 15):
-                try:
-                    if os.path.isfile(f):
-                        os.unlink(f)
-                        break
-                    else:
-                        break
-                except Exception:
-                    time.sleep(1.0)
 
 
 class TestKVStoreTTL(unittest.TestCase):

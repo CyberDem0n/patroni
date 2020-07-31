@@ -283,7 +283,7 @@ class Rewind(object):
             if b > -1:
                 b += len(pattern)
                 e = line.find('": ', b)
-                if e > -1:
+                if e > -1 and '/' in line[b:e]:
                     waldir, wal_filename = line[b:e].rsplit('/', 1)
                     if waldir.endswith('/pg_' + self._postgresql.wal_name) and len(wal_filename) == 24:
                         return wal_filename
