@@ -150,19 +150,16 @@ class KVStoreTTL(DynMemberSyncObj):
         kwargs['callback'] = callback
         timeout = kwargs.pop('timeout', None) or self.__retry_timeout
         deadline = timeout and time.time() + timeout
-        logger.error('1: timeout=%s deadline=%s', timeout, deadline)
 
         while True:
             event.clear()
             func(*args, **kwargs)
             event.wait(timeout)
-            logger.error('result=%s, error=%s', ret['result'], ret['error'])
             if ret['error'] == FAIL_REASON.SUCCESS:
                 return ret['result']
             elif ret['error'] == FAIL_REASON.REQUEST_DENIED:
                 break
             elif deadline:
-                logger.error('2: timeout=%s deadline=%s', timeout, deadline)
                 timeout = deadline - time.time()
                 if timeout <= 0:
                     break
