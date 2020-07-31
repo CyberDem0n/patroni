@@ -12,8 +12,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest]
-        dcs: [etcd]
+        os: [macos-latest]  #, windows-latest]
+        dcs: [etcd,etcd3,raft]
 
     steps:
     - uses: actions/checkout@v1

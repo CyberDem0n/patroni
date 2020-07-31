@@ -173,7 +173,7 @@ def main():
     if r != 0:
         return r
 
-    if what == 'etcd':
+    if what.startswith('etcd'):
         return install_etcd()
     elif what == 'kubernetes':
         return setup_kubernetes()
