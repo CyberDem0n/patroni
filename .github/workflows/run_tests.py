@@ -30,21 +30,36 @@ def main():
         del os.environ['COMSPEC']
         env['COMSPEC'] = sys.executable + '"' + ' "' + os.path.abspath('.github/workflows/run_behave_windows.py')
         print('"' + env['COMSPEC'] + '"')
-        subprocess.call(['pgsql/bin/pg_ctl', '-W', '-D', 'fake', '-l', 'behave.log', 'start'], env=env)
-        time.sleep(1)
-        with open('behave.log') as f:
-            p = 0
-            for _ in range(0, 600):
-                f.seek(p)
-                latest_data = f.read()
-                p = f.tell()
-                if latest_data:
-                    print(latest_data)
-                elif os.path.exists('behave.exit'):
+        print(subprocess.call(['pgsql/bin/pg_ctl', '-W', '-D', 'fake', '-l', 'behave.log', 'start'], env=env))
+        for _ in range(0, 60):
+            try:
+                with open('behave.log') as f:
+                    p = 0
+                    for _ in range(0, 600):
+                        f.seek(p)
+                        latest_data = f.read()
+                        p = f.tell()
+                        if latest_data:
+                            print(latest_data)
+                        elif os.path.exists('behave.exit'):
+                            break
+                        time.sleep(1)
+                    try:
+                        with open('behave.exit') as f:
+                            ret = int(f.read())
+                    except Exception as e:
+                        print(str(e))
+                        time.sleep(1)
                     break
+            except Exception as e:
+                print(str(e))
                 time.sleep(1)
-        with open('behave.exit') as f:
-            ret = int(f.read())
+            try:
+                with open('behave.exit') as f:
+                    ret = int(f.read())
+            except Exception as e:
+                print(str(e))
+                time.sleep(1)
     else:
         ret = subprocess.call(unbuffer + [sys.executable, '-m', 'behave'], env=env)
 
