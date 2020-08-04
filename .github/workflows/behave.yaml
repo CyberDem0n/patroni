@@ -8,11 +8,11 @@ jobs:
     env:
       DCS: ${{ matrix.dcs }}
       ETCDVERSION: 3.3.13
-      PGVERSION: 13.0-beta2  # for windows and macos
+      PGVERSION: 12.1-1  # for windows and macos
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest]
+        os: [macos-latest]  #, windows-latest]
         dcs: [etcd,etcd3,raft]
 
     steps:
@@ -24,8 +24,6 @@ jobs:
     - name: Install dependencies
       run: |
         python .github/workflows/install_deps.py
-      if: matrix.os != 'windows-latest' || matrix.dcs == 'etcd3'
     - name: Run behave tests
       run: |
         python .github/workflows/run_tests.py
-      if: matrix.os != 'windows-latest' || matrix.dcs == 'etcd3'

@@ -1,7 +1,6 @@
 import os
 import subprocess
 import sys
-import time
 
 
 def main():
@@ -25,41 +24,7 @@ def main():
     if os.name == 'nt':
         subprocess.call(['pgsql/bin/postgres', '-V'])
         subprocess.call(['pgsql/bin/pg_ctl', 'initdb', '-D', 'fake', '-U', 'postgres'])
-        os.environ['COMSPEC'] = 'echo.exe'
-        subprocess.call([sys.executable, '-c', "import subprocess; subprocess.call('true', shell=True)"], env=env)
-        del os.environ['COMSPEC']
-        env['COMSPEC'] = sys.executable + '"' + ' "' + os.path.abspath('.github/workflows/run_behave_windows.py')
-        print('"' + env['COMSPEC'] + '"')
-        print(subprocess.call(['pgsql/bin/pg_ctl', '-W', '-D', 'fake', '-l', 'behave.log', 'start'], env=env))
-        for _ in range(0, 60):
-            try:
-                with open('behave.log') as f:
-                    p = 0
-                    for _ in range(0, 600):
-                        f.seek(p)
-                        latest_data = f.read()
-                        p = f.tell()
-                        if latest_data:
-                            print(latest_data)
-                        elif os.path.exists('behave.exit'):
-                            break
-                        time.sleep(1)
-                    try:
-                        with open('behave.exit') as f:
-                            ret = int(f.read())
-                    except Exception as e:
-                        print(str(e))
-                        time.sleep(1)
-                    break
-            except Exception as e:
-                print(str(e))
-                time.sleep(1)
-            try:
-                with open('behave.exit') as f:
-                    ret = int(f.read())
-            except Exception as e:
-                print(str(e))
-                time.sleep(1)
+        ret = 0
     else:
         ret = subprocess.call(unbuffer + [sys.executable, '-m', 'behave'], env=env)
 
