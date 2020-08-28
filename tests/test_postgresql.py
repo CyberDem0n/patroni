@@ -420,9 +420,9 @@ class TestPostgresql(BaseTestPostgresql):
         def _symlink(src, dst):
             try:
                 os.symlink(src, dst)
-            except OSError:
+            except OSError as e:
                 if os.name == 'nt':  # os.symlink under Windows needs admin rights skip it
-                    pass
+                    logger.error('Symlink failed: %r', e)
         os.makedirs(os.path.join(self.p.data_dir, 'foo'))
         _symlink('foo', os.path.join(self.p.data_dir, 'pg_wal'))
         os.makedirs(os.path.join(self.p.data_dir, 'foo_tsp'))
