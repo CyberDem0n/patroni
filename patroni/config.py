@@ -64,6 +64,7 @@ class Config(object):
         'master_stop_timeout': 0,
         'synchronous_mode': False,
         'synchronous_mode_strict': False,
+        'synchronous_node_count': 1,
         'standby_cluster': {
             'create_replica_methods': '',
             'host': '',
@@ -76,7 +77,8 @@ class Config(object):
         'postgresql': {
             'bin_dir': '',
             'use_slots': True,
-            'parameters': CaseInsensitiveDict({p: v[0] for p, v in ConfigHandler.CMDLINE_OPTIONS.items()})
+            'parameters': CaseInsensitiveDict({p: v[0] for p, v in ConfigHandler.CMDLINE_OPTIONS.items()
+                                               if p not in ('wal_keep_segments', 'wal_keep_size')})
         },
         'watchdog': {
             'mode': 'automatic',
@@ -242,7 +244,8 @@ class Config(object):
                 if value:
                     ret[section][param] = value
 
-        _set_section_values('restapi', ['listen', 'connect_address', 'certfile', 'keyfile', 'cafile', 'verify_client'])
+        _set_section_values('restapi', ['listen', 'connect_address', 'certfile', 'keyfile', 'cafile', 'verify_client',
+                                        'http_extra_headers', 'https_extra_headers'])
         _set_section_values('ctl', ['insecure', 'cacert', 'certfile', 'keyfile'])
         _set_section_values('postgresql', ['listen', 'connect_address', 'config_dir', 'data_dir', 'pgpass', 'bin_dir'])
         _set_section_values('log', ['level', 'traceback_level', 'format', 'dateformat', 'max_queue_size',
@@ -304,7 +307,8 @@ class Config(object):
                 if suffix in ('HOST', 'HOSTS', 'PORT', 'USE_PROXIES', 'PROTOCOL', 'SRV', 'URL', 'PROXY',
                               'CACERT', 'CERT', 'KEY', 'VERIFY', 'TOKEN', 'CHECKS', 'DC', 'CONSISTENCY',
                               'REGISTER_SERVICE', 'SERVICE_CHECK_INTERVAL', 'NAMESPACE', 'CONTEXT',
-                              'USE_ENDPOINTS', 'SCOPE_LABEL', 'ROLE_LABEL', 'POD_IP', 'PORTS', 'LABELS') and name:
+                              'USE_ENDPOINTS', 'SCOPE_LABEL', 'ROLE_LABEL', 'POD_IP', 'PORTS', 'LABELS',
+                              'BYPASS_API_SERVICE', 'KEY_PASSWORD', 'USE_SSL') and name:
                     value = os.environ.pop(param)
                     if suffix == 'PORT':
                         value = value and parse_int(value)
@@ -312,7 +316,7 @@ class Config(object):
                         value = value and _parse_list(value)
                     elif suffix == 'LABELS':
                         value = _parse_dict(value)
-                    elif suffix in ('USE_PROXIES', 'REGISTER_SERVICE'):
+                    elif suffix in ('USE_PROXIES', 'REGISTER_SERVICE', 'BYPASS_API_SERVICE'):
                         value = parse_bool(value)
                     if value:
                         ret[name.lower()][suffix.lower()] = value
@@ -386,6 +390,7 @@ class Config(object):
             'retry_timeout',
             'synchronous_mode',
             'synchronous_mode_strict',
+            'synchronous_node_count',
         )
 
         pg_config.update({p: config[p] for p in updated_fields if p in config})

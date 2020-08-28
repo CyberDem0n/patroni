@@ -470,7 +470,7 @@ class Postgresql(object):
         self.config.replace_pg_ident()
 
         options = ['--{0}={1}'.format(p, configuration[p]) for p in self.config.CMDLINE_OPTIONS
-                   if p in configuration and p != 'wal_keep_segments']
+                   if p in configuration and p not in ('wal_keep_segments', 'wal_keep_size')]
 
         if self.cancellable.is_cancelled:
             return False
@@ -850,10 +850,51 @@ class Postgresql(object):
         self.config.setup_server_parameters()
         return True
 
+    def pg_wal_realpath(self):
+        """Returns a dict containing the symlink (key) and target (value) for the wal directory"""
+        links = {}
+        for pg_wal_dir in ('pg_xlog', 'pg_wal'):
+            pg_wal_path = os.path.join(self._data_dir, pg_wal_dir)
+            if os.path.exists(pg_wal_path) and os.path.islink(pg_wal_path):
+                pg_wal_realpath = os.path.realpath(pg_wal_path)
+                links[pg_wal_path] = pg_wal_realpath
+        return links
+
+    def pg_tblspc_realpaths(self):
+        """Returns a dict containing the symlink (key) and target (values) for the tablespaces"""
+        links = {}
+        pg_tblsp_dir = os.path.join(self._data_dir, 'pg_tblspc')
+        if os.path.exists(pg_tblsp_dir):
+            for tsdn in os.listdir(pg_tblsp_dir):
+                pg_tsp_path = os.path.join(pg_tblsp_dir, tsdn)
+                if parse_int(tsdn) and os.path.islink(pg_tsp_path):
+                    pg_tsp_rpath = os.path.realpath(pg_tsp_path)
+                    links[pg_tsp_path] = pg_tsp_rpath
+        return links
+
     def move_data_directory(self):
         if os.path.isdir(self._data_dir) and not self.is_running():
             try:
-                new_name = '{0}_{1}'.format(self._data_dir, time.strftime('%Y-%m-%d-%H-%M-%S'))
+                postfix = time.strftime('%Y-%m-%d-%H-%M-%S')
+
+                # let's see if the wal directory is a symlink, in this case we
+                # should move the target
+                for (source, pg_wal_realpath) in self.pg_wal_realpath().items():
+                    logger.info('renaming WAL directory and updating symlink: %s', pg_wal_realpath)
+                    new_name = '{0}_{1}'.format(pg_wal_realpath, postfix)
+                    os.rename(pg_wal_realpath, new_name)
+                    os.unlink(source)
+                    os.symlink(source, new_name)
+
+                # Move user defined tablespace directory
+                for (source, pg_tsp_rpath) in self.pg_tblspc_realpaths().items():
+                    logger.info('renaming user defined tablespace directory and updating symlink: %s', pg_tsp_rpath)
+                    new_name = '{0}_{1}'.format(pg_tsp_rpath, postfix)
+                    os.rename(pg_tsp_rpath, new_name)
+                    os.unlink(source)
+                    os.symlink(source, new_name)
+
+                new_name = '{0}_{1}'.format(self._data_dir, postfix)
                 logger.info('renaming data directory to %s', new_name)
                 os.rename(self._data_dir, new_name)
             except OSError:
@@ -871,61 +912,62 @@ class Postgresql(object):
                 os.remove(self._data_dir)
             elif os.path.isdir(self._data_dir):
 
-                # let's see if pg_xlog|pg_wal is a symlink, in this case we
+                # let's see if wal directory is a symlink, in this case we
                 # should clean the target
-                for pg_wal_dir in ('pg_xlog', 'pg_wal'):
-                    pg_wal_path = os.path.join(self._data_dir, pg_wal_dir)
-                    if os.path.exists(pg_wal_path) and os.path.islink(pg_wal_path):
-                        pg_wal_realpath = os.path.realpath(pg_wal_path)
-                        logger.info('Removing WAL directory: %s', pg_wal_realpath)
-                        shutil.rmtree(pg_wal_realpath)
-                # Remove user defined tablespace directory
-                pg_tblsp_dir = os.path.join(self._data_dir, 'pg_tblspc')
-                if os.path.exists(pg_tblsp_dir):
-                    for tsdn in os.listdir(pg_tblsp_dir):
-                        pg_tsp_path = os.path.join(pg_tblsp_dir, tsdn)
-                        if parse_int(tsdn) and os.path.islink(pg_tsp_path):
-                            pg_tsp_rpath = os.path.realpath(pg_tsp_path)
-                            logger.info('Removing user defined tablespace directory: %s', pg_tsp_rpath)
-                            shutil.rmtree(pg_tsp_rpath, ignore_errors=True)
+                for pg_wal_realpath in self.pg_wal_realpath().values():
+                    logger.info('Removing WAL directory: %s', pg_wal_realpath)
+                    shutil.rmtree(pg_wal_realpath)
+
+                # Remove user defined tablespace directories
+                for pg_tsp_rpath in self.pg_tblspc_realpaths().values():
+                    logger.info('Removing user defined tablespace directory: %s', pg_tsp_rpath)
+                    shutil.rmtree(pg_tsp_rpath, ignore_errors=True)
 
                 shutil.rmtree(self._data_dir)
         except (IOError, OSError):
             logger.exception('Could not remove data directory %s', self._data_dir)
             self.move_data_directory()
 
-    def pick_synchronous_standby(self, cluster):
+    def _get_synchronous_commit_param(self):
+        return self.query("SHOW synchronous_commit").fetchone()[0]
+
+    def pick_synchronous_standby(self, cluster, sync_node_count=1):
         """Finds the best candidate to be the synchronous standby.
 
         Current synchronous standby is always preferred, unless it has disconnected or does not want to be a
         synchronous standby any longer.
 
-        :returns tuple of candidate name or None, and bool showing if the member is the active synchronous standby.
+        :returns tuple of candidates list and synchronous standby list.
         """
-        current = cluster.sync.sync_standby
-        current = current.lower() if current else current
+        if self._major_version < 90600:
+            sync_node_count = 1
         members = {m.name.lower(): m for m in cluster.members}
         candidates = []
-        # Pick candidates based on who has flushed WAL farthest.
-        # TODO: for synchronous_commit = remote_write we actually want to order on write_location
+        sync_nodes = []
+        # Pick candidates based on who has higher replay/remote_write/flush lsn.
+        sync_commit_par = self._get_synchronous_commit_param()
+        sort_col = {'remote_apply': 'replay', 'remote_write': 'write'}.get(sync_commit_par, 'flush')
+        # pg_stat_replication.sync_state has 4 possible states - async, potential, quorum, sync.
+        # Sort clause "ORDER BY sync_state DESC" is to get the result in required order and to keep
+        # the result consistent in case if a synchronous standby member is slowed down OR async node
+        # receiving changes faster than the sync member (very rare but possible). Such cases would
+        # trigger sync standby member swapping frequently and the sort on sync_state desc should
+        # help in keeping the query result consistent.
         for app_name, state, sync_state in self.query(
                 "SELECT pg_catalog.lower(application_name), state, sync_state"
                 " FROM pg_catalog.pg_stat_replication"
-                " ORDER BY flush_{0} DESC".format(self.lsn_name)):
+                " WHERE state = 'streaming'"
+                " ORDER BY sync_state DESC, {0}_{1} DESC".format(sort_col, self.lsn_name)):
             member = members.get(app_name)
-            if state != 'streaming' or not member or member.tags.get('nosync', False):
+            if not member or member.tags.get('nosync', False):
                 continue
+            candidates.append(member.name)
             if sync_state == 'sync':
-                return member.name, True
-            if sync_state == 'potential' and app_name == current:
-                # Prefer current even if not the best one any more to avoid indecisivness and spurious swaps.
-                return cluster.sync.sync_standby, False
-            if sync_state in ('async', 'potential'):
-                candidates.append(member.name)
+                sync_nodes.append(member.name)
+            if len(candidates) >= sync_node_count:
+                break
 
-        if candidates:
-            return candidates[0], False
-        return None, False
+        return candidates, sync_nodes
 
     def schedule_sanity_checks_after_pause(self):
         """

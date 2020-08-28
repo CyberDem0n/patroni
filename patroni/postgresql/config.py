@@ -294,6 +294,7 @@ class ConfigHandler(object):
         'max_connections': (100, lambda v: int(v) >= 25, 90100),
         'max_wal_senders': (10, lambda v: int(v) >= 3, 90100),
         'wal_keep_segments': (8, lambda v: int(v) >= 1, 90100),
+        'wal_keep_size': ('128MB', lambda v: parse_int(v, 'MB') >= 16, 130000),
         'max_prepared_transactions': (0, lambda v: int(v) >= 0, 90100),
         'max_locks_per_transaction': (64, lambda v: int(v) >= 32, 90100),
         'track_commit_timestamp': ('off', lambda v: parse_bool(v) is not None, 90500),
@@ -830,8 +831,20 @@ class ConfigHandler(object):
                     parameters.pop('synchronous_standby_names', None)
             else:
                 parameters['synchronous_standby_names'] = self._synchronous_standby_names
-        if self._postgresql.major_version >= 90600 and parameters['wal_level'] == 'hot_standby':
-            parameters['wal_level'] = 'replica'
+
+        # Handle hot_standby <-> replica rename
+        if parameters.get('wal_level') == ('hot_standby' if self._postgresql.major_version >= 90600 else 'replica'):
+            parameters['wal_level'] = 'replica' if self._postgresql.major_version >= 90600 else 'hot_standby'
+
+        # Try to recalcualte wal_keep_segments <-> wal_keep_size assuming that typical wal_segment_size is 16MB.
+        # The real segment size could be estimated from pg_control, but we don't really care, because the only goal of
+        # this exercise is improving cross version compatibility and user must set the correct parameter in the config.
+        if self._postgresql.major_version >= 130000:
+            wal_keep_segments = parameters.pop('wal_keep_segments', self.CMDLINE_OPTIONS['wal_keep_segments'][0])
+            parameters.setdefault('wal_keep_size', str(wal_keep_segments * 16) + 'MB')
+        else:
+            wal_keep_size = parse_int(parameters.pop('wal_keep_size', self.CMDLINE_OPTIONS['wal_keep_size'][0]), 'MB')
+            parameters.setdefault('wal_keep_segments', int((wal_keep_size + 8) / 16))
         ret = CaseInsensitiveDict({k: v for k, v in parameters.items() if not self._postgresql.major_version or
                                    self._postgresql.major_version >= self.CMDLINE_OPTIONS.get(k, (0, 1, 90100))[2]})
         ret.update({k: os.path.join(self._config_dir, ret[k]) for k in ('hba_file', 'ident_file') if k in ret})
@@ -1007,16 +1020,20 @@ class ConfigHandler(object):
         else:
             logger.info('No PostgreSQL configuration items changed, nothing to reload.')
 
-    def set_synchronous_standby(self, name):
+    def set_synchronous_standby(self, sync_members):
         """Sets a node to be synchronous standby and if changed does a reload for PostgreSQL."""
-        if name and name != '*':
-            name = quote_ident(name)
-        if name != self._synchronous_standby_names:
-            if name is None:
+        if sync_members and sync_members != ['*']:
+            sync_members = [quote_ident(x) for x in sync_members]
+        if self._postgresql.major_version >= 90600 and len(sync_members) > 1:
+            sync_param = '{0} ({1})'.format(len(sync_members), ','.join(sync_members))
+        else:
+            sync_param = next(iter(sync_members), None)
+        if sync_param != self._synchronous_standby_names:
+            if sync_param is None:
                 self._server_parameters.pop('synchronous_standby_names', None)
             else:
-                self._server_parameters['synchronous_standby_names'] = name
-            self._synchronous_standby_names = name
+                self._server_parameters['synchronous_standby_names'] = sync_param
+            self._synchronous_standby_names = sync_param
             if self._postgresql.state == 'running':
                 self.write_postgresql_conf()
                 self._postgresql.reload()

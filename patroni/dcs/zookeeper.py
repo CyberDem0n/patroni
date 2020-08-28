@@ -63,10 +63,14 @@ class ZooKeeper(AbstractDCS):
         if isinstance(hosts, list):
             hosts = ','.join(hosts)
 
+        mapping = {'use_ssl': 'use_ssl', 'verify': 'verify_certs', 'cacert': 'ca',
+                   'cert': 'certfile', 'key': 'keyfile', 'key_password': 'keyfile_password'}
+        kwargs = {v: config[k] for k, v in mapping.items() if k in config}
+
         self._client = KazooClient(hosts, handler=PatroniSequentialThreadingHandler(config['retry_timeout']),
                                    timeout=config['ttl'], connection_retry=KazooRetry(max_delay=1, max_tries=-1,
                                    sleep_func=time.sleep), command_retry=KazooRetry(deadline=config['retry_timeout'],
-                                   max_delay=1, max_tries=-1, sleep_func=time.sleep))
+                                   max_delay=1, max_tries=-1, sleep_func=time.sleep), **kwargs)
         self._client.add_listener(self.session_listener)
 
         self._fetch_cluster = True
@@ -165,7 +169,7 @@ class ZooKeeper(AbstractDCS):
     def load_members(self, sync_standby):
         members = []
         for member in self.get_children(self.members_path, self.cluster_watcher):
-            watch = member == sync_standby and self.cluster_watcher or None
+            watch = member in sync_standby and self.cluster_watcher or None
             data = self.get_node(self.members_path + member, watch)
             if data is not None:
                 members.append(self.member(member, *data))
@@ -194,7 +198,7 @@ class ZooKeeper(AbstractDCS):
         sync = SyncState.from_node(sync and sync[1].version, sync and sync[0])
 
         # get list of members
-        sync_standby = sync.leader == self._name and sync.sync_standby or None
+        sync_standby = sync.leader == self._name and sync.members or []
         members = self.load_members(sync_standby) if self._MEMBERS[:-1] in nodes else []
 
         # get leader

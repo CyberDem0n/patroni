@@ -98,7 +98,8 @@ class Bootstrap(object):
 
     def _custom_bootstrap(self, config):
         self._postgresql.set_state('running custom bootstrap script')
-        params = ['--scope=' + self._postgresql.scope, '--datadir=' + self._postgresql.data_dir]
+        params = [] if config.get('no_params') else ['--scope=' + self._postgresql.scope,
+                                                     '--datadir=' + self._postgresql.data_dir]
         try:
             logger.info('Running custom bootstrap script: %s', config['command'])
             if self._postgresql.cancellable.call(shlex.split(config['command']) + params) != 0:
@@ -355,7 +356,8 @@ END;$$""".format(f, rewind['username'])
                     self._running_custom_bootstrap = False
                     # If we don't have custom configuration for pg_hba.conf we need to restore original file
                     if not postgresql.config.get('pg_hba'):
-                        os.unlink(postgresql.config.pg_hba_conf)
+                        if os.path.exists(postgresql.config.pg_hba_conf):
+                            os.unlink(postgresql.config.pg_hba_conf)
                         postgresql.config.restore_configuration_files()
                     postgresql.config.write_postgresql_conf()
                     postgresql.config.replace_pg_ident()
