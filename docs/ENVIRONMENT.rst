@@ -76,7 +76,17 @@ Environment names for Etcdv3 are similar as for Etcd, you just need to use ``ETC
 
 ZooKeeper
 ---------
--  **PATRONI\_ZOOKEEPER\_HOSTS**: comma separated list of ZooKeeper cluster members: "'host1:port1','host2:port2','etc...'". It is important to quote every single entity!
+-  **PATRONI\_ZOOKEEPER\_HOSTS**: Comma separated list of ZooKeeper cluster members: "'host1:port1','host2:port2','etc...'". It is important to quote every single entity!
+-  **PATRONI\_ZOOKEEPER\_USE\_SSL**: (optional) Whether SSL is used or not. Defaults to ``false``. If set to ``false``, all SSL specific parameters are ignored.
+-  **PATRONI\_ZOOKEEPER\_CACERT**: (optional) The CA certificate. If present it will enable validation.
+-  **PATRONI\_ZOOKEEPER\_CERT**: (optional) File with the client certificate.
+-  **PATRONI\_ZOOKEEPER\_KEY**: (optional) File with the client key.
+-  **PATRONI\_ZOOKEEPER\_KEY\_PASSWORD**: (optional) The client key password.
+-  **PATRONI\_ZOOKEEPER\_VERIFY**: (optional) Whether to verify certificate or not. Defaults to ``true``.
+
+.. note::
+    It is required to install ``kazoo>=2.6.0`` to support SSL.
+
 
 Exhibitor
 ---------
@@ -87,6 +97,7 @@ Exhibitor
 
 Kubernetes
 ----------
+-  **PATRONI\_KUBERNETES\_BYPASS\_API\_SERVICE**: (optional) When communicating with the Kubernetes API, Patroni is usually relying on the `kubernetes` service, the address of which is exposed in the pods via the `KUBERNETES_SERVICE_HOST` environment variable. If `PATRONI_KUBERNETES_BYPASS_API_SERVICE` is set to ``true``, Patroni will resolve the list of API nodes behind the service and connect directly to them.
 -  **PATRONI\_KUBERNETES\_NAMESPACE**: (optional) Kubernetes namespace where the Patroni pod is running. Default value is `default`.
 -  **PATRONI\_KUBERNETES\_LABELS**: Labels in format ``{label1: value1, label2: value2}``. These labels will be used to find existing objects (Pods and either Endpoints or ConfigMaps) associated with the current cluster. Also Patroni will set them on every object (Endpoint or ConfigMap) it creates.
 -  **PATRONI\_KUBERNETES\_SCOPE\_LABEL**: (optional) name of the label containing cluster name. Default value is `cluster-name`.
@@ -142,6 +153,8 @@ REST API
 -  **PATRONI\_RESTAPI\_KEYFILE**: Specifies the file with the secret key in the PEM format.
 -  **PATRONI\_RESTAPI\_CAFILE**: Specifies the file with the CA_BUNDLE with certificates of trusted CAs to use while verifying client certs.
 -  **PATRONI\_RESTAPI\_VERIFY\_CLIENT**: ``none`` (default), ``optional`` or ``required``. When ``none`` REST API will not check client certificates. When ``required`` client certificates are required for all REST API calls. When ``optional`` client certificates are required for all unsafe REST API endpoints. When ``required`` is used, then client authentication succeeds, if the certificate signature verification succeeds. For ``optional`` the client cert will only be checked for ``PUT``, ``POST``, ``PATCH``, and ``DELETE`` requests. 
+-  **PATRONI\_RESTAPI\_HTTP\_EXTRA\_HEADERS**: (optional) HTTP headers let the REST API server pass additional information with an HTTP response.
+-  **PATRONI\_RESTAPI\_HTTPS\_EXTRA\_HEADERS**: (optional) HTTPS headers let the REST API server pass additional information with an HTTP response when TLS is enabled. This will also pass additional information set in ``http_extra_headers``.
 
 CTL
 ---

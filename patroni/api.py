@@ -38,6 +38,8 @@ class RestApiHandler(BaseHTTPRequestHandler):
             headers['Content-Type'] = content_type
         for name, value in headers.items():
             self.send_header(name, value)
+        for name, value in self.server.patroni.api.http_extra_headers.items():
+            self.send_header(name, value)
         self.end_headers()
         self.wfile.write(body.encode('utf-8'))
 
@@ -131,7 +133,7 @@ class RestApiHandler(BaseHTTPRequestHandler):
             status_code = 200 if response.get('state') == 'running' else 503
         elif cluster:  # dcs is available
             is_synchronous = cluster.is_synchronous_mode() and cluster.sync \
-                    and cluster.sync.sync_standby == patroni.postgresql.name
+                    and patroni.postgresql.name in cluster.sync.members
             if path in ('/sync', '/synchronous') and is_synchronous:
                 status_code = replica_status_code
             elif path in ('/async', '/asynchronous') and not is_synchronous:
@@ -196,6 +198,8 @@ class RestApiHandler(BaseHTTPRequestHandler):
         request = self._read_json_content()
         if request:
             cluster = self.server.patroni.dcs.get_cluster()
+            if not (cluster.config and cluster.config.modify_index):
+                return self.send_error(503)
             data = cluster.config.data.copy()
             if patch_config(data, request):
                 value = json.dumps(data, separators=(',', ':'))
@@ -365,13 +369,13 @@ class RestApiHandler(BaseHTTPRequestHandler):
         if leader and (not cluster.leader or cluster.leader.name != leader):
             return 'leader name does not match'
         if candidate:
-            if action == 'switchover' and cluster.is_synchronous_mode() and cluster.sync.sync_standby != candidate:
+            if action == 'switchover' and cluster.is_synchronous_mode() and candidate not in cluster.sync.members:
                 return 'candidate name does not match with sync_standby'
             members = [m for m in cluster.members if m.name == candidate]
             if not members:
                 return 'candidate does not exists'
         elif cluster.is_synchronous_mode():
-            members = [m for m in cluster.members if m.name == cluster.sync.sync_standby]
+            members = [m for m in cluster.members if m.name in cluster.sync.members]
             if not members:
                 return action + ' is not possible: can not find sync_standby'
         else:
@@ -531,6 +535,7 @@ class RestApiServer(ThreadingMixIn, HTTPServer, Thread):
         self.patroni = patroni
         self.__listen = None
         self.__ssl_options = None
+        self.http_extra_headers = {}
         self.reload_config(config)
         self.daemon = True
 
@@ -664,6 +669,9 @@ class RestApiServer(ThreadingMixIn, HTTPServer, Thread):
             raise ValueError('Can not find "restapi.listen" config')
 
         ssl_options = {n: config[n] for n in ('certfile', 'keyfile', 'cafile') if n in config}
+
+        self.http_extra_headers = config.get('http_extra_headers') or {}
+        self.http_extra_headers.update(ssl_options.get('certfile') and config.get('https_extra_headers') or {})
 
         if isinstance(config.get('verify_client'), six.string_types):
             ssl_options['verify_client'] = config['verify_client'].lower()

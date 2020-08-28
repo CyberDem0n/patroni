@@ -147,7 +147,17 @@ If you want that Patroni works with Etcd cluster via protocol version 3, you nee
 
 ZooKeeper
 ----------
--  **hosts**: list of ZooKeeper cluster members in format: ['host1:port1', 'host2:port2', 'etc...'].
+-  **hosts**: List of ZooKeeper cluster members in format: ['host1:port1', 'host2:port2', 'etc...'].
+-  **use_ssl**: (optional) Whether SSL is used or not. Defaults to ``false``. If set to ``false``, all SSL specific parameters are ignored.
+-  **cacert**: (optional) The CA certificate. If present it will enable validation.
+-  **cert**: (optional) File with the client certificate.
+-  **key**: (optional) File with the client key.
+-  **key_password**: (optional) The client key password.
+-  **verify**: (optional) Whether to verify certificate or not. Defaults to ``true``.
+
+.. note::
+    It is required to install ``kazoo>=2.6.0`` to support SSL.
+
 
 Exhibitor
 ---------
@@ -159,6 +169,7 @@ Exhibitor
 
 Kubernetes
 ----------
+-  **bypass\_api\_service**: (optional) When communicating with the Kubernetes API, Patroni is usually relying on the `kubernetes` service, the address of which is exposed in the pods via the `KUBERNETES_SERVICE_HOST` environment variable. If `bypass_api_service` is set to ``true``, Patroni will resolve the list of API nodes behind the service and connect directly to them.
 -  **namespace**: (optional) Kubernetes namespace where Patroni pod is running. Default value is `default`.
 -  **labels**: Labels in format ``{label1: value1, label2: value2}``. These labels will be used to find existing objects (Pods and either Endpoints or ConfigMaps) associated with the current cluster. Also Patroni will set them on every object (Endpoint or ConfigMap) it creates.
 -  **scope\_label**: (optional) name of the label containing cluster name. Default value is `cluster-name`.
@@ -271,6 +282,28 @@ REST API
         -  **keyfile**: (optional): Specifies the file with the secret key in the PEM format.
         -  **cafile**: (optional): Specifies the file with the CA_BUNDLE with certificates of trusted CAs to use while verifying client certs.
         -  **verify\_client**: (optional): ``none`` (default), ``optional`` or ``required``. When ``none`` REST API will not check client certificates. When ``required`` client certificates are required for all REST API calls. When ``optional`` client certificates are required for all unsafe REST API endpoints. When ``required`` is used, then client authentication succeeds, if the certificate signature verification succeeds.  For ``optional`` the client cert will only be checked for ``PUT``, ``POST``, ``PATCH``, and ``DELETE`` requests.
+        -  **http\_extra\_headers**: (optional): HTTP headers let the REST API server pass additional information with an HTTP response.
+        -  **https\_extra\_headers**: (optional): HTTPS headers let the REST API server pass additional information with an HTTP response when TLS is enabled. This will also pass additional information set in ``http_extra_headers``.
+
+Here is an example of both **http_extra_headers** and **https_extra_headers**:
+
+.. code:: YAML
+
+        restapi:
+          listen: <listen>
+          connect_address: <connect_address>
+          authentication:
+            username: <username>
+            password: <password>
+          http_extra_headers:
+            'X-Frame-Options': 'SAMEORIGIN'
+            'X-XSS-Protection': '1; mode=block'
+            'X-Content-Type-Options': 'nosniff'
+          cafile: <ca file>
+          certfile: <cert>
+          keyfile: <key>
+          https_extra_headers:
+            'Strict-Transport-Security': 'max-age=31536000; includeSubDomains'   
 
 .. _patronictl_settings:
 
