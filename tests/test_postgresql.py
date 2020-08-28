@@ -418,11 +418,9 @@ class TestPostgresql(BaseTestPostgresql):
 
     def test_remove_data_directory(self):
         def _symlink(src, dst):
-            try:
+            if os.name != 'nt':  # os.symlink under Windows needs admin rights skip it
                 os.symlink(src, dst)
-            except OSError as e:
-                if os.name == 'nt':  # os.symlink under Windows needs admin rights skip it
-                    print('Symlink failed: {0}'.format(str(e)))
+
         os.makedirs(os.path.join(self.p.data_dir, 'foo'))
         _symlink('foo', os.path.join(self.p.data_dir, 'pg_wal'))
         os.makedirs(os.path.join(self.p.data_dir, 'foo_tsp'))
