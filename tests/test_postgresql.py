@@ -272,10 +272,10 @@ class TestPostgresql(BaseTestPostgresql):
     @patch.object(Postgresql, 'major_version', PropertyMock(return_value=100000))
     @patch.object(Postgresql, 'primary_conninfo', Mock(return_value='host=1'))
     def test__read_recovery_params_pre_v12(self):
-        self.p.config.write_recovery_conf({'standby_mode': 'on', 'primary_conninfo': {'password': 'foo'}})
+        self.p.config.write_recovery_conf({'standby_mode': 'off', 'primary_conninfo': {'password': 'foo'}})
         self.assertEqual(self.p.config.check_recovery_conf(None), (True, True))
         self.assertEqual(self.p.config.check_recovery_conf(None), (True, True))
-        self.p.config.write_recovery_conf({'standby_mode': '\n'})
+        self.p.config.write_recovery_conf({'restore_command': '\n'})
         with patch('patroni.postgresql.config.mtime', mock_mtime):
             self.assertEqual(self.p.config.check_recovery_conf(None), (True, True))
 
@@ -357,10 +357,22 @@ class TestPostgresql(BaseTestPostgresql):
         mock_is_running.return_value = False
         self.assertFalse(self.p.is_healthy())
 
-    def test_promote(self):
+    @patch('psutil.Popen')
+    def test_promote(self, mock_popen):
+        mock_popen.return_value.wait.return_value = 0
+        task = CriticalTask()
+        self.assertTrue(self.p.promote(0, task))
+
         self.p.set_role('replica')
-        self.assertIsNone(self.p.promote(0))
-        self.assertTrue(self.p.promote(0))
+        self.p.config._config['pre_promote'] = 'test'
+        with patch('patroni.postgresql.cancellable.CancellableSubprocess.is_cancelled', PropertyMock(return_value=1)):
+            self.assertFalse(self.p.promote(0, task))
+
+        mock_popen.side_effect = Exception
+        self.assertFalse(self.p.promote(0, task))
+        task.reset()
+        task.cancel()
+        self.assertFalse(self.p.promote(0, task))
 
     def test_timeline_wal_position(self):
         self.assertEqual(self.p.timeline_wal_position(), (1, 2, 1))
@@ -714,3 +726,8 @@ class TestPostgresql(BaseTestPostgresql):
         self.p.set_role('standby_leader')
         self.p.reset_cluster_info_state()
         self.assertRaises(PostgresConnectionException, self.p.received_timeline)
+
+    def test__write_recovery_params(self):
+        self.p.config._write_recovery_params(Mock(), {'pause_at_recovery_target': 'false'})
+        with patch.object(Postgresql, 'major_version', PropertyMock(return_value=90400)):
+            self.p.config._write_recovery_params(Mock(), {'recovery_target_action': 'PROMOTE'})
