@@ -147,7 +147,7 @@ class PyTest(Command):
         requirements = set(self.distribution.install_requires + ['mock>=2.0.0', 'pytest-cov', 'pytest'])
         for k, v in self.distribution.extras_require.items():
             if not k.startswith(':') or evaluate_marker(k[1:]):
-                requirements.append(v)
+                requirements.update(v)
         self.distribution.fetch_build_eggs(list(requirements))
         self.run_tests()
 
