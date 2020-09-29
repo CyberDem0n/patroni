@@ -7,7 +7,6 @@ import codecs
 import datetime
 import dateutil.parser
 import dateutil.tz
-import cdiff
 import copy
 import difflib
 import io
@@ -34,6 +33,10 @@ from patroni.request import PatroniRequest
 from patroni.version import __version__
 from prettytable import ALL, FRAME, PrettyTable
 from six.moves.urllib_parse import urlparse
+try:
+    from ydiff import markup_to_pager, PatchStream
+except ImportError:  # pragma: no cover
+    from cdiff import markup_to_pager, PatchStream
 
 CONFIG_DIR_PATH = click.get_app_dir('patroni')
 CONFIG_FILE_PATH = os.path.join(CONFIG_DIR_PATH, 'patronictl.yaml')
@@ -188,6 +191,7 @@ def print_output(columns, rows, alignment=None, fmt='pretty', header=None, delim
         else:
             hrules = ALL if any(any(isinstance(c, six.string_types) and '\n' in c for c in r) for r in rows) else FRAME
             table = PatronictlPrettyTable(header, columns, hrules=hrules)
+            table.align = 'l'
             for k, v in (alignment or {}).items():
                 table.align[k] = v
             for r in rows:
@@ -820,8 +824,7 @@ def output_members(cluster, name, extended=False, fmt='pretty'):
 
         rows.append([m.get(n.lower().replace(' ', '_'), '') for n in columns])
 
-    print_output(columns, rows, {'Member': 'l', 'Lag in MB': 'r', 'TL': 'r', 'Tags': 'l'},
-                 fmt, ' Cluster: {0} ({1}) '.format(name, initialize))
+    print_output(columns, rows, {'Lag in MB': 'r', 'TL': 'r'}, fmt, ' Cluster: {0} ({1}) '.format(name, initialize))
 
     if fmt not in ('pretty', 'topology'):  # Omit service info when using machine-readable formats
         return
@@ -1086,7 +1089,14 @@ def show_diff(before_editing, after_editing):
             side_by_side = False
             width = 80
             tab_width = 8
-        cdiff.markup_to_pager(cdiff.PatchStream(buf), opts)
+            wrap = True
+            if find_executable('less'):
+                pager = None
+            else:
+                pager = 'more.com' if sys.platform == 'win32' else 'more'
+            pager_options = None
+
+        markup_to_pager(PatchStream(buf), opts)
     else:
         for line in unified_diff:
             click.echo(line.rstrip('\n'))
