@@ -148,6 +148,7 @@ class PyTest(Command):
         for k, v in self.distribution.extras_require.items():
             if not k.startswith(':') or evaluate_marker(k[1:]):
                 requirements.update(v)
+
         self.distribution.fetch_build_eggs(list(requirements))
         self.run_tests()
 
@@ -170,7 +171,7 @@ def setup_package(version):
         extra = False
         for e, v in EXTRAS_REQUIRE.items():
             if v and r.startswith(v[0]):
-                EXTRAS_REQUIRE[e] = [] if e == 'kubernetes' else [r]
+                EXTRAS_REQUIRE[e] = [r] if e != 'kubernetes' or sys.version_info < (3, 0, 0) else []
                 extra = True
         if not extra:
             install_requires.append(r)
