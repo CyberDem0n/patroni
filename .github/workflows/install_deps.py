@@ -24,6 +24,8 @@ def install_requirements(what):
         if r != '':
             extras = {e for e, v in EXTRAS_REQUIRE.items() if v and r.startswith(v[0])}
             if not extras or what == 'all' or what in extras:
+                if 'pysyncobj' in r:
+                    r = 'git+https://github.com/bakwc/PySyncObj.git@master#egg=pysyncobj'
                 requirements.append(r)
 
     subprocess.call([sys.executable, '-m', 'pip', 'install', '--upgrade', 'pip'])
