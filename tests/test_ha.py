@@ -3,7 +3,7 @@ import etcd
 import os
 import sys
 
-from mock import call, Mock, MagicMock, PropertyMock, patch, mock_open
+from mock import Mock, MagicMock, PropertyMock, patch, mock_open
 from patroni.config import Config
 from patroni.dcs import Cluster, ClusterConfig, Failover, Leader, Member, get_dcs, SyncState, TimelineHistory
 from patroni.dcs.etcd import AbstractEtcdClientWithFailover
@@ -261,9 +261,17 @@ class TestHa(PostgresInit):
 
     @patch.object(Rewind, 'ensure_clean_shutdown', Mock())
     def test_crash_recovery(self):
+        self.ha.has_lock = true
         self.p.is_running = false
         self.p.controldata = lambda: {'Database cluster state': 'in production', 'Database system identifier': SYSID}
         self.assertEqual(self.ha.run_cycle(), 'doing crash recovery in a single user mode')
+        with patch('patroni.async_executor.AsyncExecutor.busy', PropertyMock(return_value=True)),\
+                patch.object(Ha, 'check_timeline', Mock(return_value=False)):
+            self.ha._async_executor.schedule('doing crash recovery in a single user mode')
+            self.ha.state_handler.cancellable._process = Mock()
+            self.ha._crash_recovery_started -= 600
+            self.ha.patroni.config.set_dynamic_configuration({'maximum_lag_on_failover': 10})
+            self.assertEqual(self.ha.run_cycle(), 'terminated crash recovery because of startup timeout')
 
     @patch.object(Rewind, 'rewind_or_reinitialize_needed_and_possible', Mock(return_value=True))
     @patch.object(Rewind, 'can_rewind', PropertyMock(return_value=True))
@@ -492,6 +500,9 @@ class TestHa(PostgresInit):
                 with patch('patroni.postgresql.Postgresql.terminate_starting_postmaster') as mock_terminate:
                     self.assertEqual(self.ha.run_cycle(), 'lost leader lock during restart')
                     mock_terminate.assert_called()
+
+            self.ha.is_paused = true
+            self.assertEqual(self.ha.run_cycle(), 'PAUSE: restart in progress')
 
     def test_manual_failover_from_leader(self):
         self.ha.fetch_node_status = get_node_status()
@@ -902,9 +913,8 @@ class TestHa(PostgresInit):
         self.p.pick_synchronous_standby = Mock(return_value=(['other2', 'other3'], ['other2']))
         self.ha.dcs.write_sync_state = Mock(return_value=True)
         self.ha.run_cycle()
-        # mock_set_sync.assert_called_once_with(['other2'])
-        calls = [call(['other2']), call(['other2', 'other3'])]
-        mock_set_sync.assert_has_calls(calls)
+        self.assertEqual(mock_set_sync.call_args_list[0][0], (['other2'],))
+        self.assertEqual(mock_set_sync.call_args_list[1][0], (['other2', 'other3'],))
 
         mock_set_sync.reset_mock()
         # Test sync standby is not disabled when updating dcs fails
