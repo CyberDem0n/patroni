@@ -2,7 +2,7 @@ import os
 import unittest
 import time
 
-from mock import Mock, patch
+from mock import Mock, PropertyMock, patch
 from patroni.dcs.raft import DynMemberSyncObj, KVStoreTTL, Raft, SyncObjUtility
 from pysyncobj import SyncObjConf, FAIL_REASON
 
@@ -51,29 +51,25 @@ class TestDynMemberSyncObj(unittest.TestCase):
 
     def test_utility(self):
         utility = SyncObjUtility(['127.0.0.1:1235'], self.conf)
-        utility.setPartnerNode(list(utility._SyncObj__otherNodes)[0])
-        utility.sendMessage(['members'])
+        utility.getMembers()
         utility._onMessageReceived(0, '')
 
 
+@patch.object(SyncObjConf, 'fullDumpFile', PropertyMock(return_value=None), create=True)
+@patch.object(SyncObjConf, 'journalFile', PropertyMock(return_value=None), create=True)
 class TestKVStoreTTL(unittest.TestCase):
 
+    @patch.object(SyncObjConf, 'fullDumpFile', PropertyMock(return_value=None), create=True)
+    @patch.object(SyncObjConf, 'journalFile', PropertyMock(return_value=None), create=True)
     def setUp(self):
-        self.conf = SyncObjConf(appendEntriesUseBatch=False, appendEntriesPeriod=0.001,
-                                raftMinTimeout=0.004, raftMaxTimeout=0.005, autoTickPeriod=0.001)
         callback = Mock()
         callback.replicated = False
-        self.so = KVStoreTTL('127.0.0.1:1234', [], self.conf, on_set=callback, on_delete=callback)
+        self.so = KVStoreTTL(None, callback, callback, self_addr='127.0.0.1:1234')
         self.so.set_retry_timeout(10)
-
-    @staticmethod
-    def destroy(so):
-        so.destroy()
-        so._SyncObj__thread.join()
 
     def tearDown(self):
         if self.so:
-            self.destroy(self.so)
+            self.so.destroy()
 
     def test_set(self):
         self.assertTrue(self.so.set('foo', 'bar', prevExist=False, ttl=30))
@@ -82,7 +78,6 @@ class TestKVStoreTTL(unittest.TestCase):
         self.assertTrue(self.so.retry(self.so._set, 'foo', {'value': 'buz', 'created': 1, 'updated': 1}))
 
     def test_delete(self):
-        self.conf.autoTickPeriod = 0.1
         self.so.set('foo', 'bar')
         self.so.set('fooo', 'bar')
         self.assertFalse(self.so.delete('foo', prevValue='buz'))
@@ -108,11 +103,10 @@ class TestKVStoreTTL(unittest.TestCase):
 
     def test_on_ready_override(self):
         self.assertTrue(self.so.set('foo', 'bar'))
-        self.destroy(self.so)
+        self.so.destroy()
         self.so = None
-        self.conf.onReady = Mock()
-        self.conf.autoTick = False
-        so = KVStoreTTL('127.0.0.1:1234', ['127.0.0.1:1235'], self.conf)
+        so = KVStoreTTL(Mock(), None, None, self_addr='127.0.0.1:1234',
+                        partner_addrs=['127.0.0.1:1235'], patronictl=True, startAutoTick=False)
         so.doTick(0)
         so.destroy()
 
@@ -139,7 +133,6 @@ class TestRaft(unittest.TestCase):
         self.assertTrue(raft.take_leader())
         raft.watch(None, 0.001)
         raft._sync_obj.destroy()
-        raft._sync_obj._SyncObj__thread.join()
 
     def tearDown(self):
         remove_files('127.0.0.1:1234.')

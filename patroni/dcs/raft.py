@@ -6,7 +6,7 @@ import time
 
 from patroni.dcs import AbstractDCS, ClusterConfig, Cluster, Failover, Leader, Member, SyncState, TimelineHistory
 from pysyncobj import SyncObj, SyncObjConf, replicated, FAIL_REASON
-from pysyncobj.transport import Node, TCPTransport, CONNECTION_STATE
+from pysyncobj.transport import Node, TCPNode, TCPTransport, CONNECTION_STATE
 
 logger = logging.getLogger(__name__)
 
@@ -17,10 +17,73 @@ class MessageNode(Node):
         self.address = address
 
 
-class UtilityTransport(TCPTransport):
+class MockSyncObj(object):
 
-    def __init__(self, syncObj, selfNode, otherNodes):
-        super(UtilityTransport, self).__init__(syncObj, selfNode, otherNodes)
+    """This class helps to solve the chicken-egg problem between SyncObj and TCPTransport.
+       The SyncObj accepts the transport object in the constructor, but the TCPTransport
+       requires the SyncObj object in the constructor and calls some methods from it."""
+
+    def addOnTickCallback(*args):
+        pass
+
+
+class _TCPTransport(TCPTransport):
+
+    """The real initialization of _TCPTransport happens in the postInit method,
+       which must be explicitly called after the SyncObj was created.
+       Since the SyncObj could manipulate with _nodes, the autoTick must be set to False."""
+
+    def __init__(self):
+        super(_TCPTransport, self).__init__(MockSyncObj(), None, [])
+        self.__connectedNodes = set()
+
+    def postInit(self, syncObj, selfNode, otherNodes):
+        self._syncObj = syncObj
+        self._selfNode = selfNode
+        self._ready = self._selfIsReadonlyNode = selfNode is None
+        self._syncObj.addOnTickCallback(self._onTick)
+
+        for node in otherNodes:
+            self.addNode(node)
+
+        if not self._ready:
+            self._createServer()
+
+    def _onNodeConnected(self, node):
+        super(_TCPTransport, self)._onNodeConnected(node)
+        self.__connectedNodes.add(node)
+
+    def _onNodeDisconnected(self, node):
+        super(_TCPTransport, self)._onNodeDisconnected(node)
+        self.__connectedNodes.discard(node)
+
+    @property
+    def nodes(self):
+        return self._nodes
+
+    def connectionState(self, node):
+        return CONNECTION_STATE.CONNECTED if node in self.__connectedNodes else CONNECTION_STATE.DISCONNECTED
+
+    def _onIncomingMessageReceived(self, conn, message):
+        if self._syncObj.encryptor and not conn.sendRandKey:
+            conn.sendRandKey = message
+            conn.recvRandKey = os.urandom(32)
+            conn.send(conn.recvRandKey)
+            return
+
+        # Utility messages
+        if isinstance(message, list) and message[0] == 'members':
+            conn.send([{'addr': node.id, 'status': self.connectionState(node)} for node in self._nodes] +
+                      [{'addr': self._selfNode.id, 'status': CONNECTION_STATE.CONNECTED}])
+            return True
+
+        return super(_TCPTransport, self)._onIncomingMessageReceived(conn, message)
+
+
+class UtilityTransport(_TCPTransport):
+
+    def postInit(self, syncObj, otherNodes):
+        super(UtilityTransport, self).postInit(syncObj, None, otherNodes)
         self._selfIsReadonlyNode = False
 
     def _connectIfNecessarySingle(self, node):
@@ -43,11 +106,10 @@ class UtilityTransport(TCPTransport):
 class SyncObjUtility(SyncObj):
 
     def __init__(self, otherNodes, conf):
-        autoTick = conf.autoTick
-        conf.autoTick = False
-        super(SyncObjUtility, self).__init__(None, otherNodes, conf, transportClass=UtilityTransport)
-        conf.autoTick = autoTick
-        self._SyncObj__transport.setOnMessageReceivedCallback(self._onMessageReceived)
+        self.__transport = UtilityTransport()
+        super(SyncObjUtility, self).__init__(None, [], conf, transport=self.__transport)
+        self.__transport.postInit(self, map(TCPNode, otherNodes))
+        self.__transport.setOnMessageReceivedCallback(self._onMessageReceived)
         self.__result = None
 
     def setPartnerNode(self, partner):
@@ -55,79 +117,103 @@ class SyncObjUtility(SyncObj):
 
     def sendMessage(self, message):
         # Abuse the fact that node address is send as a first message
-        self._SyncObj__transport._selfNode = MessageNode(message)
-        self._SyncObj__transport.connectIfRequiredSingle(self.__node)
-        while not self._SyncObj__transport.isDisconnected(self.__node):
+        self.__transport._selfNode = MessageNode(message)
+        self.__transport.connectIfRequiredSingle(self.__node)
+        self.__result = None
+        while not self.__transport.isDisconnected(self.__node):
             self._poller.poll(0.5)
         return self.__result
 
     def _onMessageReceived(self, _, message):
         self.__result = message
-        self._SyncObj__transport.disconnectSingle(self.__node)
+        self.__transport.disconnectSingle(self.__node)
 
-
-class MyTCPTransport(TCPTransport):
-
-    def _onIncomingMessageReceived(self, conn, message):
-        if self._syncObj.encryptor and not conn.sendRandKey:
-            conn.sendRandKey = message
-            conn.recvRandKey = os.urandom(32)
-            conn.send(conn.recvRandKey)
-            return
-
-        # Utility messages
-        if isinstance(message, list) and message[0] == 'members':
-            conn.send(self._syncObj._get_members())
-            return True
-
-        return super(MyTCPTransport, self)._onIncomingMessageReceived(conn, message)
+    def getMembers(self):
+        for node in self.__transport.nodes:
+            self.setPartnerNode(node)
+            response = self.sendMessage(['members'])
+            if response:
+                return [member['addr'] for member in response]
 
 
 class DynMemberSyncObj(SyncObj):
 
     def __init__(self, selfAddress, partnerAddrs, conf):
-        add_self = False
+        self.__early_apply_local_log = selfAddress is not None
+        self.applied_local_log = False
+
         utility = SyncObjUtility(partnerAddrs, conf)
-        for node in utility._SyncObj__otherNodes:
-            utility.setPartnerNode(node)
-            response = utility.sendMessage(['members'])
-            if response:
-                partnerAddrs = [member['addr'] for member in response if member['addr'] != selfAddress]
-                add_self = selfAddress and len(partnerAddrs) == len(response)
-                break
+        members = utility.getMembers()
+        add_self = members and selfAddress not in members
 
-        super(DynMemberSyncObj, self).__init__(selfAddress, partnerAddrs, conf, transportClass=MyTCPTransport)
+        selfNode = selfAddress and TCPNode(selfAddress)
+        otherNodes = [TCPNode(member) for member in (members or partnerAddrs) if member != selfAddress]
+
+        transport = _TCPTransport()
+        super(DynMemberSyncObj, self).__init__(selfNode, otherNodes, conf, transport=transport)
+        transport.postInit(self, selfNode, otherNodes)
+
         if add_self:
-            threading.Thread(target=utility.sendMessage, args=(['add', selfAddress],)).start()
-
-    def _get_members(self):
-        ret = [{'addr': node.id, 'leader': node == self._getLeader(),
-                'status': CONNECTION_STATE.CONNECTED if node in self._SyncObj__connectedNodes
-                else CONNECTION_STATE.DISCONNECTED} for node in self._SyncObj__otherNodes]
-        ret.append({'addr': self._SyncObj__selfNode.id, 'leader': self._isLeader(),
-                    'status': CONNECTION_STATE.CONNECTED})
-        return ret
+            thread = threading.Thread(target=utility.sendMessage, args=(['add', selfAddress],))
+            thread.daemon = True
+            thread.start()
 
     def _SyncObj__doChangeCluster(self, request, reverse=False):
-        ret = False
+        ret = super(DynMemberSyncObj, self)._SyncObj__doChangeCluster(request, reverse)
         if not self._SyncObj__selfNode or request[0] != 'add' or reverse or request[1] != self._SyncObj__selfNode.id:
-            ret = super(DynMemberSyncObj, self)._SyncObj__doChangeCluster(request, reverse)
             if ret:
                 self.forceLogCompaction()
         return ret
 
+    def _onTick(self, timeToWait=0.0):
+        # The SyncObj starts applying the local log only when there is at least one node connected.
+        # We want to change this behavior and apply the local log even when there is nobody except us.
+        # It gives us at least some picture about the last known cluster state.
+        if self.__early_apply_local_log and not self.applied_local_log and self._SyncObj__needLoadDumpFile:
+            self._SyncObj__raftCommitIndex = self._SyncObj__getCurrentLogIndex()
+            self._SyncObj__raftCurrentTerm = self._SyncObj__getCurrentLogTerm()
+
+        super(DynMemberSyncObj, self)._onTick(timeToWait)
+
+        # The SyncObj calls onReady callback only when cluster got the leader and is ready for writes.
+        # In some cases for us it is safe to "signal" the Raft object when the local log is fully applied.
+        # We are using the `applied_local_log` property for that, but not calling the callback function.
+        if self.__early_apply_local_log and not self.applied_local_log and self._SyncObj__raftCommitIndex != 1 and \
+                self._SyncObj__raftLastApplied == self._SyncObj__raftCommitIndex:
+            self.applied_local_log = True
+
 
 class KVStoreTTL(DynMemberSyncObj):
 
-    def __init__(self, selfAddress, partnerAddrs, conf, on_set=None, on_delete=None):
+    def __init__(self, on_ready, on_set, on_delete, startAutoTick=True, **config):
+        self.__thread = None
         self.__on_set = on_set
         self.__on_delete = on_delete
         self.__limb = {}
         self.__retry_timeout = None
-        self.__early_apply_local_log = selfAddress is not None
-        self.applied_local_log = False
-        super(KVStoreTTL, self).__init__(selfAddress, partnerAddrs, conf)
+
+        self_addr = config.get('self_addr')
+        partner_addrs = set(config.get('partner_addrs', []))
+        if config.get('patronictl'):
+            if self_addr:
+                partner_addrs.add(self_addr)
+            self_addr = None
+
+        file_template = os.path.join(config.get('data_dir', ''), (self_addr or ''))
+        conf = SyncObjConf(password=config.get('password'), autoTick=False, appendEntriesUseBatch=False,
+                           bindAddress=config.get('bind_addr'), commandsWaitLeader=config.get('commandsWaitLeader'),
+                           fullDumpFile=(file_template + '.dump' if self_addr else None),
+                           journalFile=(file_template + '.journal' if self_addr else None),
+                           onReady=on_ready, dynamicMembershipChange=True)
+        self.autoTickPeriod = conf.autoTickPeriod
+
+        super(KVStoreTTL, self).__init__(self_addr, partner_addrs, conf)
         self.__data = {}
+
+        if startAutoTick:
+            self.__thread = threading.Thread(target=self._autoTickThread)
+            self.__thread.daemon = True
+            self.__thread.start()
 
     @staticmethod
     def __check_requirements(old_value, **kwargs):
@@ -169,6 +255,7 @@ class KVStoreTTL(DynMemberSyncObj):
     def _set(self, key, value, **kwargs):
         old_value = self.__data.get(key, {})
         if not self.__check_requirements(old_value, **kwargs):
+            logger.error('2: old_value=%s kwargs=%s, data=%s, time=%s', old_value, kwargs, self.__data, time.time())
             return False
 
         if old_value and old_value['created'] != value['created']:
@@ -183,6 +270,7 @@ class KVStoreTTL(DynMemberSyncObj):
     def set(self, key, value, ttl=None, **kwargs):
         old_value = self.__data.get(key, {})
         if not self.__check_requirements(old_value, **kwargs):
+            logger.error('1: old_value=%s kwargs=%s, data=%s', old_value, kwargs, self.__data)
             return False
 
         value = {'value': value, 'updated': time.time()}
@@ -240,26 +328,23 @@ class KVStoreTTL(DynMemberSyncObj):
         return {k: v for k, v in self.__data.items() if k.startswith(key)}
 
     def _onTick(self, timeToWait=0.0):
-        # The SyncObj starts applying the local log only when there is at least one node connected.
-        # We want to change this behavior and apply the local log even when there is nobody except us.
-        # It gives us at least some picture about the last known cluster state.
-        if self.__early_apply_local_log and not self.applied_local_log and self._SyncObj__needLoadDumpFile:
-            self._SyncObj__raftCommitIndex = self._SyncObj__getCurrentLogIndex()
-            self._SyncObj__raftCurrentTerm = self._SyncObj__getCurrentLogTerm()
-
         super(KVStoreTTL, self)._onTick(timeToWait)
-
-        # The SyncObj calls onReady callback only when cluster got the leader and is ready for writes.
-        # In some cases for us it is safe to "signal" the Raft object when the local log is fully applied.
-        # We are using the `applied_local_log` property for that, but not calling the callback function.
-        if self.__early_apply_local_log and not self.applied_local_log and self._SyncObj__raftCommitIndex != 1 and \
-                self._SyncObj__raftLastApplied == self._SyncObj__raftCommitIndex:
-            self.applied_local_log = True
 
         if self._isLeader():
             self.__expire_keys()
         else:
             self.__limb.clear()
+
+    def _autoTickThread(self):
+        self.__destroying = False
+        while not self.__destroying:
+            self.doTick(self.autoTickPeriod)
+
+    def destroy(self):
+        if self.__thread:
+            self.__destroying = True
+            self.__thread.join()
+        super(KVStoreTTL, self).destroy()
 
 
 class Raft(AbstractDCS):
@@ -268,22 +353,9 @@ class Raft(AbstractDCS):
         super(Raft, self).__init__(config)
         self._ttl = int(config.get('ttl') or 30)
 
-        self_addr = config.get('self_addr')
-        partner_addrs = config.get('partner_addrs', [])
-        if self._ctl:
-            if self_addr:
-                partner_addrs.append(self_addr)
-            self_addr = None
-
         ready_event = threading.Event()
-        file_template = os.path.join(config.get('data_dir', ''), (self_addr or ''))
-        conf = SyncObjConf(password=config.get('password'), appendEntriesUseBatch=False,
-                           bindAddress=config.get('bind_addr'), commandsWaitLeader=False,
-                           fullDumpFile=(file_template + '.dump' if self_addr else None),
-                           journalFile=(file_template + '.journal' if self_addr else None),
-                           onReady=ready_event.set, dynamicMembershipChange=True)
+        self._sync_obj = KVStoreTTL(ready_event.set, self._on_set, self._on_delete, commandsWaitLeader=False, **config)
 
-        self._sync_obj = KVStoreTTL(self_addr, partner_addrs, conf, self._on_set, self._on_delete)
         while True:
             ready_event.wait(5)
             if ready_event.isSet() or self._sync_obj.applied_local_log:
