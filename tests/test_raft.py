@@ -78,6 +78,7 @@ class TestKVStoreTTL(unittest.TestCase):
         self.assertTrue(self.so.retry(self.so._set, 'foo', {'value': 'buz', 'created': 1, 'updated': 1}))
 
     def test_delete(self):
+        self.so.autoTickPeriod = 0.2
         self.so.set('foo', 'bar')
         self.so.set('fooo', 'bar')
         self.assertFalse(self.so.delete('foo', prevValue='buz'))
