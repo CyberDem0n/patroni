@@ -31,7 +31,7 @@ jobs:
         COVERALLS_FLAG_NAME: unit-${{ matrix.os }}-python-2.7
         COVERALLS_PARALLEL: true
       run: |
-        coveralls debug
+        coveralls --verbose
       if: matrix.os != 'windows-latest'
 
     - name: Set up Python 3.5
@@ -47,10 +47,10 @@ jobs:
     - name: Upload Coverage
       env:
         COVERALLS_REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        COVERALLS_FLAG_NAME: unit-${{ matrix.os }}-python-2.7
+        COVERALLS_FLAG_NAME: unit-${{ matrix.os }}-python-3.5
         COVERALLS_PARALLEL: true
       run: |
-        coveralls debug
+        coveralls --verbose
 
     - name: Set up Python 3.6
       uses: actions/setup-python@v1
@@ -65,10 +65,10 @@ jobs:
     - name: Upload Coverage
       env:
         COVERALLS_REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        COVERALLS_FLAG_NAME: unit-${{ matrix.os }}-python-2.7
+        COVERALLS_FLAG_NAME: unit-${{ matrix.os }}-python-3.6
         COVERALLS_PARALLEL: true
       run: |
-        coveralls debug
+        coveralls --verbose
 
     - name: Set up Python 3.7
       uses: actions/setup-python@v1
@@ -83,10 +83,10 @@ jobs:
     - name: Upload Coverage
       env:
         COVERALLS_REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        COVERALLS_FLAG_NAME: unit-${{ matrix.os }}-python-2.7
+        COVERALLS_FLAG_NAME: unit-${{ matrix.os }}-python-3.7
         COVERALLS_PARALLEL: true
       run: |
-        coveralls debug
+        coveralls --verbose
 
     - name: Set up Python 3.8
       uses: actions/setup-python@v1
@@ -101,10 +101,10 @@ jobs:
     - name: Upload Coverage
       env:
         COVERALLS_REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        COVERALLS_FLAG_NAME: unit-${{ matrix.os }}-python-2.7
+        COVERALLS_FLAG_NAME: unit-${{ matrix.os }}-python-2.8
         COVERALLS_PARALLEL: true
       run: |
-        coveralls debug
+        coveralls --verbose
 
 
   finish:
@@ -116,6 +116,6 @@ jobs:
     - name: Finished
       run: |
         pip3 install --upgrade coveralls
-        coveralls debug --finish
+        coveralls --verbose --finish
       env:
         COVERALLS_REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
