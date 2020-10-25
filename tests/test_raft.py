@@ -65,6 +65,7 @@ class TestKVStoreTTL(unittest.TestCase):
         callback = Mock()
         callback.replicated = False
         self.so = KVStoreTTL(None, callback, callback, self_addr='127.0.0.1:1234')
+        self.so.startAutoTick()
         self.so.set_retry_timeout(10)
 
     def tearDown(self):
@@ -107,7 +108,7 @@ class TestKVStoreTTL(unittest.TestCase):
         self.so.destroy()
         self.so = None
         so = KVStoreTTL(Mock(), None, None, self_addr='127.0.0.1:1234',
-                        partner_addrs=['127.0.0.1:1235'], patronictl=True, startAutoTick=False)
+                        partner_addrs=['127.0.0.1:1235'], patronictl=True)
         so.doTick(0)
         so.destroy()
 
