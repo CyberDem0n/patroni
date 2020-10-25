@@ -25,12 +25,14 @@ jobs:
       run: |
         python .github/workflows/run_tests.py
       if: matrix.os != 'windows-latest'
-    - name: Coveralls Parallel
-      uses: coverallsapp/github-action@master
-      with:
-        github-token: ${{ secrets.GITHUB_TOKEN }}
-        flag-name: unit-${{ matrix.os }}-python-2.7
-        parallel: true
+    - name: Upload Coverage
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        COVERALLS_FLAG_NAME: unit-${{ matrix.os }}-python-2.7
+        COVERALLS_PARALLEL: true
+      run: |
+        coveralls
+      if: matrix.os != 'windows-latest'
 
     - name: Set up Python 3.5
       uses: actions/setup-python@v1
@@ -42,12 +44,13 @@ jobs:
     - name: Run tests and flake8
       run: |
         python .github/workflows/run_tests.py
-    - name: Coveralls Parallel
-      uses: coverallsapp/github-action@master
-      with:
-        github-token: ${{ secrets.GITHUB_TOKEN }}
-        flag-name: unit-${{ matrix.os }}-python-3.5
-        parallel: true
+    - name: Upload Coverage
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        COVERALLS_FLAG_NAME: unit-${{ matrix.os }}-python-2.7
+        COVERALLS_PARALLEL: true
+      run: |
+        coveralls
 
     - name: Set up Python 3.6
       uses: actions/setup-python@v1
@@ -59,12 +62,13 @@ jobs:
     - name: Run tests and flake8
       run: |
         python .github/workflows/run_tests.py
-    - name: Coveralls Parallel
-      uses: coverallsapp/github-action@master
-      with:
-        github-token: ${{ secrets.GITHUB_TOKEN }}
-        flag-name: unit-${{ matrix.os }}-python-3.6
-        parallel: true
+    - name: Upload Coverage
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        COVERALLS_FLAG_NAME: unit-${{ matrix.os }}-python-2.7
+        COVERALLS_PARALLEL: true
+      run: |
+        coveralls
 
     - name: Set up Python 3.7
       uses: actions/setup-python@v1
@@ -76,12 +80,13 @@ jobs:
     - name: Run tests and flake8
       run: |
         python .github/workflows/run_tests.py
-    - name: Coveralls Parallel
-      uses: coverallsapp/github-action@master
-      with:
-        github-token: ${{ secrets.GITHUB_TOKEN }}
-        flag-name: unit-${{ matrix.os }}-python-3.7
-        parallel: true
+    - name: Upload Coverage
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        COVERALLS_FLAG_NAME: unit-${{ matrix.os }}-python-2.7
+        COVERALLS_PARALLEL: true
+      run: |
+        coveralls
 
     - name: Set up Python 3.8
       uses: actions/setup-python@v1
@@ -93,21 +98,24 @@ jobs:
     - name: Run tests and flake8
       run: |
         python .github/workflows/run_tests.py
-
-    - name: Coveralls Parallel
-      uses: coverallsapp/github-action@master
-      with:
-        github-token: ${{ secrets.GITHUB_TOKEN }}
-        flag-name: unit-${{ matrix.os }}-python-3.8
-        parallel: true
+    - name: Upload Coverage
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        COVERALLS_FLAG_NAME: unit-${{ matrix.os }}-python-2.7
+        COVERALLS_PARALLEL: true
+      run: |
+        coveralls
 
 
   finish:
+    name: Finish Coveralls
     needs: tests
     runs-on: ubuntu-latest
+    container: python:3-slim
     steps:
-    - name: Coveralls Finished
-      uses: coverallsapp/github-action@master
-      with:
-        github-token: ${{ secrets.GITHUB_TOKEN }}
-        parallel-finished: true
+    - name: Finished
+      run: |
+        pip3 install --upgrade coveralls
+        coveralls --finish
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
