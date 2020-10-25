@@ -32,7 +32,7 @@ jobs:
         COVERALLS_FLAG_NAME: unit-${{ matrix.os }}-python-2.7
         COVERALLS_PARALLEL: true
       run: |
-        coveralls
+        coveralls debug
 
 
   finish:
@@ -44,6 +44,6 @@ jobs:
     - name: Finished
       run: |
         pip3 install --upgrade coveralls
-        coveralls --finish
+        coveralls debug --finish
       env:
         COVERALLS_REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -31,7 +31,7 @@ jobs:
         COVERALLS_FLAG_NAME: unit-${{ matrix.os }}-python-2.7
         COVERALLS_PARALLEL: true
       run: |
-        coveralls
+        coveralls debug
       if: matrix.os != 'windows-latest'
 
     - name: Set up Python 3.5
@@ -50,7 +50,7 @@ jobs:
         COVERALLS_FLAG_NAME: unit-${{ matrix.os }}-python-2.7
         COVERALLS_PARALLEL: true
       run: |
-        coveralls
+        coveralls debug
 
     - name: Set up Python 3.6
       uses: actions/setup-python@v1
@@ -68,7 +68,7 @@ jobs:
         COVERALLS_FLAG_NAME: unit-${{ matrix.os }}-python-2.7
         COVERALLS_PARALLEL: true
       run: |
-        coveralls
+        coveralls debug
 
     - name: Set up Python 3.7
       uses: actions/setup-python@v1
@@ -86,7 +86,7 @@ jobs:
         COVERALLS_FLAG_NAME: unit-${{ matrix.os }}-python-2.7
         COVERALLS_PARALLEL: true
       run: |
-        coveralls
+        coveralls debug
 
     - name: Set up Python 3.8
       uses: actions/setup-python@v1
@@ -104,7 +104,7 @@ jobs:
         COVERALLS_FLAG_NAME: unit-${{ matrix.os }}-python-2.7
         COVERALLS_PARALLEL: true
       run: |
-        coveralls
+        coveralls debug
 
 
   finish:
@@ -116,6 +116,6 @@ jobs:
     - name: Finished
       run: |
         pip3 install --upgrade coveralls
-        coveralls --finish
+        coveralls debug --finish
       env:
         COVERALLS_REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
