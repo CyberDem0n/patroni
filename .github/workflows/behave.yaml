@@ -30,7 +30,7 @@ jobs:
     - name: Upload Coverage
       env:
         COVERALLS_REPO_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
-        COVERALLS_FLAG_NAME: unit-${{ matrix.os }}-python-3.7
+        COVERALLS_FLAG_NAME: behave-${{ matrix.os }}-python-3.7
         COVERALLS_PARALLEL: true
       run: |
         coveralls --verbose
