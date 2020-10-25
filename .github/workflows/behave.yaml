@@ -29,7 +29,7 @@ jobs:
         python .github/workflows/run_tests.py
     - name: Upload Coverage
       env:
-        COVERALLS_REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        COVERALLS_REPO_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
         COVERALLS_FLAG_NAME: unit-${{ matrix.os }}-python-${{ matrix.python-version }}
         COVERALLS_PARALLEL: true
       run: |
@@ -47,4 +47,4 @@ jobs:
         pip3 install --upgrade coveralls
         coveralls --verbose --finish
       env:
-        COVERALLS_REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        COVERALLS_REPO_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
