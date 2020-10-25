@@ -13,7 +13,7 @@ class RaftController(AbstractPatroniDaemon):
 
         config = self.config.get('raft')
         assert 'self_addr' in config
-        self._raft = KVStoreTTL(None, None, None, False, **config)
+        self._raft = KVStoreTTL(None, None, None, **config)
 
     def _run_cycle(self):
         try:
