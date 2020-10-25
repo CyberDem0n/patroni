@@ -185,7 +185,7 @@ class DynMemberSyncObj(SyncObj):
 
 class KVStoreTTL(DynMemberSyncObj):
 
-    def __init__(self, on_ready, on_set, on_delete, startAutoTick=True, **config):
+    def __init__(self, on_ready, on_set, on_delete, **config):
         self.__thread = None
         self.__on_set = on_set
         self.__on_delete = on_delete
@@ -209,11 +209,6 @@ class KVStoreTTL(DynMemberSyncObj):
 
         super(KVStoreTTL, self).__init__(self_addr, partner_addrs, conf)
         self.__data = {}
-
-        if startAutoTick:
-            self.__thread = threading.Thread(target=self._autoTickThread)
-            self.__thread.daemon = True
-            self.__thread.start()
 
     @staticmethod
     def __check_requirements(old_value, **kwargs):
@@ -340,6 +335,11 @@ class KVStoreTTL(DynMemberSyncObj):
         while not self.__destroying:
             self.doTick(self.autoTickPeriod)
 
+    def startAutoTick(self):
+        self.__thread = threading.Thread(target=self._autoTickThread)
+        self.__thread.daemon = True
+        self.__thread.start()
+
     def destroy(self):
         if self.__thread:
             self.__destroying = True
@@ -355,6 +355,7 @@ class Raft(AbstractDCS):
 
         ready_event = threading.Event()
         self._sync_obj = KVStoreTTL(ready_event.set, self._on_set, self._on_delete, commandsWaitLeader=False, **config)
+        self._sync_obj.startAutoTick()
 
         while True:
             ready_event.wait(5)

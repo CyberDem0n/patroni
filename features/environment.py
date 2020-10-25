@@ -603,6 +603,7 @@ class RaftController(AbstractDcsController):
 
         ready_event = threading.Event()
         self._raft = KVStoreTTL(ready_event.set, None, None, partner_addrs=[self.CONTROLLER_ADDR], password=self.PASSWORD)
+        self._raft.startAutoTick()
         ready_event.wait()
 
 
