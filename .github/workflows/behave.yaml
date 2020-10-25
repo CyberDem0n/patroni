@@ -38,7 +38,7 @@ jobs:
 
   finish:
     name: Finish Coveralls
-    needs: tests
+    needs: behave
     runs-on: ubuntu-latest
     container: python:3-slim
     steps:
