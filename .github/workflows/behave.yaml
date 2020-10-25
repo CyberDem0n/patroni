@@ -27,3 +27,20 @@ jobs:
     - name: Run behave tests
       run: |
         python .github/workflows/run_tests.py
+    - name: Coveralls Parallel
+      uses: coverallsapp/github-action@master
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        flag-name: behave-${{ matrix.os }}-${{ matrix.dcs }}-python-3.7
+        parallel: true
+
+
+  finish:
+    needs: behave
+    runs-on: ubuntu-latest
+    steps:
+    - name: Coveralls Finished
+      uses: coverallsapp/github-action@master
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        parallel-finished: true
