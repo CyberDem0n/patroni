@@ -29,7 +29,6 @@ jobs:
       env:
         COVERALLS_REPO_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
         COVERALLS_FLAG_NAME: unit-${{ matrix.os }}-python-2.7
-        COVERALLS_PARALLEL: true
       run: |
         coveralls --verbose
       if: matrix.os != 'windows-latest'
@@ -48,7 +47,6 @@ jobs:
       env:
         COVERALLS_REPO_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
         COVERALLS_FLAG_NAME: unit-${{ matrix.os }}-python-3.5
-        COVERALLS_PARALLEL: true
       run: |
         coveralls --verbose
 
@@ -66,7 +64,6 @@ jobs:
       env:
         COVERALLS_REPO_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
         COVERALLS_FLAG_NAME: unit-${{ matrix.os }}-python-3.6
-        COVERALLS_PARALLEL: true
       run: |
         coveralls --verbose
 
@@ -84,7 +81,6 @@ jobs:
       env:
         COVERALLS_REPO_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
         COVERALLS_FLAG_NAME: unit-${{ matrix.os }}-python-3.7
-        COVERALLS_PARALLEL: true
       run: |
         coveralls --verbose
 
@@ -102,20 +98,5 @@ jobs:
       env:
         COVERALLS_REPO_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
         COVERALLS_FLAG_NAME: unit-${{ matrix.os }}-python-3.8
-        COVERALLS_PARALLEL: true
       run: |
         coveralls --verbose
-
-
-  finish:
-    name: Finish Coveralls
-    needs: tests
-    runs-on: ubuntu-latest
-    container: python:3-slim
-    steps:
-    - name: Finished
-      run: |
-        pip3 install --upgrade coveralls
-        coveralls --verbose --finish
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
