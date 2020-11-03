@@ -8,7 +8,7 @@ from pysyncobj import SyncObjConf, FAIL_REASON
 
 
 def remove_files(prefix):
-    for f in ('journal', 'dump'):
+    for f in ('journal', 'journal.meta', 'dump'):
         f = prefix + f
         if os.path.isfile(f):
             for i in range(0, 15):
@@ -30,29 +30,20 @@ class TestDynMemberSyncObj(unittest.TestCase):
         self.conf = SyncObjConf(appendEntriesUseBatch=False, dynamicMembershipChange=True, autoTick=False)
         self.so = DynMemberSyncObj('127.0.0.1:1234', ['127.0.0.1:1235'], self.conf)
 
-    @patch.object(SyncObjUtility, 'sendMessage')
-    def test_add_member(self, mock_send_message):
-        mock_send_message.return_value = [{'addr': '127.0.0.1:1235'}, {'addr': '127.0.0.1:1236'}]
-        mock_send_message.ver = 0
+    @patch.object(SyncObjUtility, 'executeCommand')
+    def test_add_member(self, mock_execute_command):
+        mock_execute_command.return_value = [{'addr': '127.0.0.1:1235'}, {'addr': '127.0.0.1:1236'}]
+        mock_execute_command.ver = 0
         DynMemberSyncObj('127.0.0.1:1234', ['127.0.0.1:1235'], self.conf)
         self.conf.dynamicMembershipChange = False
         DynMemberSyncObj('127.0.0.1:1234', ['127.0.0.1:1235'], self.conf)
 
-    def test___onUtilityMessage(self):
-        self.so._SyncObj__encryptor = Mock()
+    def test_getMembers(self):
         mock_conn = Mock()
-        mock_conn.sendRandKey = None
-        self.so._SyncObj__transport._onIncomingMessageReceived(mock_conn, 'randkey')
         self.so._SyncObj__transport._onIncomingMessageReceived(mock_conn, ['members'])
-        self.so._SyncObj__transport._onIncomingMessageReceived(mock_conn, ['status'])
 
     def test__SyncObj__doChangeCluster(self):
         self.so._SyncObj__doChangeCluster(['add', '127.0.0.1:1236'])
-
-    def test_utility(self):
-        utility = SyncObjUtility(['127.0.0.1:1235'], self.conf)
-        utility.getMembers()
-        utility._onMessageReceived(0, '')
 
 
 @patch.object(SyncObjConf, 'fullDumpFile', PropertyMock(return_value=None), create=True)

@@ -17,7 +17,7 @@ class RaftController(AbstractPatroniDaemon):
 
     def _run_cycle(self):
         try:
-            self._raft.doTick(self._raft.autoTickPeriod)
+            self._raft.doTick(self._raft.conf.autoTickPeriod)
         except Exception:
             logger.exception('doTick')
 
