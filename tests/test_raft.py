@@ -9,7 +9,7 @@ from pysyncobj import SyncObjConf, FAIL_REASON
 
 def remove_files(prefix):
     for f in ('journal', 'journal.meta', 'dump'):
-        f = prefix + f
+        f = os.path.join(os.getcwd(), prefix + f)
         if os.path.isfile(f):
             for i in range(0, 15):
                 try:
@@ -107,7 +107,8 @@ class TestKVStoreTTL(unittest.TestCase):
 class TestRaft(unittest.TestCase):
 
     def test_raft(self):
-        raft = Raft({'ttl': 30, 'scope': 'test', 'name': 'pg', 'self_addr': '127.0.0.1:1234', 'retry_timeout': 10})
+        raft = Raft({'ttl': 30, 'scope': 'test', 'name': 'pg', 'self_addr': '127.0.0.1:1234',
+                     'data_dir': os.getcwd(), 'retry_timeout': 10})
         raft.set_retry_timeout(20)
         raft.set_ttl(60)
         self.assertTrue(raft.touch_member(''))
