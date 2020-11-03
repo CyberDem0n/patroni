@@ -95,7 +95,9 @@ class KVStoreTTL(DynMemberSyncObj):
                 partner_addrs.add(self_addr)
             self_addr = None
 
-        file_template = os.path.join(config.get('data_dir', ''), (self_addr or ''))
+        file_template = (self_addr or '')
+        file_template = file_template.replace(':', '_') if os.name == 'nt' else file_template
+        file_template = os.path.join(config.get('data_dir', ''), file_template)
         conf = SyncObjConf(password=config.get('password'), autoTick=False, appendEntriesUseBatch=False,
                            bindAddress=config.get('bind_addr'), commandsWaitLeader=config.get('commandsWaitLeader'),
                            fullDumpFile=(file_template + '.dump' if self_addr else None),
