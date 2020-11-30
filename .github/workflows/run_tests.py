@@ -19,7 +19,7 @@ def main():
         for name in os.listdir(tmp):
             if name.startswith('.coverage.'):
                 shutil.move(os.path.join(tmp, name), name)
-        subprocess.call([sys.executable, '-m', 'coverage', 'combine'])
+        return subprocess.call([sys.executable, '-m', 'coverage', 'combine'])
 
     env = os.environ.copy()
     if sys.platform.startswith('linux'):
