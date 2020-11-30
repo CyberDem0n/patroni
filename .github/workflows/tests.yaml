@@ -33,6 +33,7 @@ jobs:
       env:
         COVERALLS_FLAG_NAME: unit-${{ matrix.os }}-python-2.7
         COVERALLS_PARALLEL: 'true'
+        COVERALLS_REPO_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
         GITHUB_TOKEN: ${{ secrets.github_token }}
       run: coveralls --verbose
       if: matrix.os != 'windows'
@@ -137,6 +138,7 @@ jobs:
       env:
         COVERALLS_FLAG_NAME: behave-ubuntu-${{ matrix.dcs }}-${{ matrix.python-version }}
         COVERALLS_PARALLEL: 'true'
+        COVERALLS_REPO_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
         GITHUB_TOKEN: ${{ secrets.github_token }}
       run: coveralls --verbose
 
@@ -149,7 +151,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macost]  #, windows]
+        os: [macos]  #, windows]
         dcs: [etcd,etcd3,raft]
 
     steps:
