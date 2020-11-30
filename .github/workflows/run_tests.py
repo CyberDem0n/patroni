@@ -1,6 +1,8 @@
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 
 
 def main():
@@ -9,7 +11,16 @@ def main():
     if what == 'all':
         flake8 = subprocess.call([sys.executable, 'setup.py', 'flake8'])
         test = subprocess.call([sys.executable, 'setup.py', 'test'])
+        version = '.'.join(map(str, sys.version_info[:2]))
+        shutil.move('.coverage', os.path.join(tempfile.gettempdir(), '.coverage.' + version))
         return flake8 | test
+    elif what == 'combine':
+        tmp = tempfile.gettempdir()
+        for name in os.listdir(tmp):
+            if name.startswith('.coverage.'):
+                shutil.move(os.path.join(tmp, name), name)
+        subprocess.call([sys.executable, '-m', 'coverage', 'combine'])
+
     env = os.environ.copy()
     if sys.platform.startswith('linux'):
         path = '/usr/lib/postgresql/10/bin:.'

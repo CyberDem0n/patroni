@@ -29,14 +29,6 @@ jobs:
     - name: Run tests and flake8
       run: python .github/workflows/run_tests.py
       if: matrix.os != 'windows'
-    - name: Upload Coverage
-      env:
-        COVERALLS_FLAG_NAME: unit-${{ matrix.os }}-python-2.7
-        COVERALLS_PARALLEL: 'true'
-        COVERALLS_REPO_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
-        GITHUB_TOKEN: ${{ secrets.github_token }}
-      run: coveralls --verbose
-      if: matrix.os != 'windows'
 
     - name: Set up Python 3.5
       uses: actions/setup-python@v2
@@ -46,12 +38,6 @@ jobs:
       run: python .github/workflows/install_deps.py
     - name: Run tests and flake8
       run: python .github/workflows/run_tests.py
-    - name: Upload Coverage
-      env:
-        COVERALLS_FLAG_NAME: unit-${{ matrix.os }}-python-3.5
-        COVERALLS_PARALLEL: 'true'
-        GITHUB_TOKEN: ${{ secrets.github_token }}
-      run: coveralls --verbose
 
     - name: Set up Python 3.6
       uses: actions/setup-python@v2
@@ -61,12 +47,6 @@ jobs:
       run: python .github/workflows/install_deps.py
     - name: Run tests and flake8
       run: python .github/workflows/run_tests.py
-    - name: Upload Coverage
-      env:
-        COVERALLS_FLAG_NAME: unit-${{ matrix.os }}-python-3.6
-        COVERALLS_PARALLEL: 'true'
-        GITHUB_TOKEN: ${{ secrets.github_token }}
-      run: coveralls --verbose
 
     - name: Set up Python 3.7
       uses: actions/setup-python@v2
@@ -76,12 +56,6 @@ jobs:
       run: python .github/workflows/install_deps.py
     - name: Run tests and flake8
       run: python .github/workflows/run_tests.py
-    - name: Upload Coverage
-      env:
-        COVERALLS_FLAG_NAME: unit-${{ matrix.os }}-python-3.7
-        COVERALLS_PARALLEL: 'true'
-        GITHUB_TOKEN: ${{ secrets.github_token }}
-      run: coveralls --verbose
 
     - name: Set up Python 3.8
       uses: actions/setup-python@v2
@@ -91,12 +65,6 @@ jobs:
       run: python .github/workflows/install_deps.py
     - name: Run tests and flake8
       run: python .github/workflows/run_tests.py
-    - name: Upload Coverage
-      env:
-        COVERALLS_FLAG_NAME: unit-${{ matrix.os }}-python-3.8
-        COVERALLS_PARALLEL: 'true'
-        GITHUB_TOKEN: ${{ secrets.github_token }}
-      run: coveralls --verbose
 
     - name: Set up Python 3.9
       uses: actions/setup-python@v2
@@ -106,21 +74,24 @@ jobs:
       run: python .github/workflows/install_deps.py
     - name: Run tests and flake8
       run: python .github/workflows/run_tests.py
+    - name: Combine coverage
+      run: python .github/workflows/run_tests.py combine
     - name: Upload Coverage
       env:
-        COVERALLS_FLAG_NAME: unit-${{ matrix.os }}-python-3.9
+        COVERALLS_FLAG_NAME: unit-${{ matrix.os }}
         COVERALLS_PARALLEL: 'true'
         GITHUB_TOKEN: ${{ secrets.github_token }}
       run: coveralls --verbose
 
   behave-ubuntu:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}-latest
     env:
       DCS: ${{ matrix.dcs }}
       ETCDVERSION: 3.3.13
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu]
         python-version: [2.7, 3.5, 3.8]
         dcs: [etcd, etcd3, consul, exhibitor, kubernetes, raft]
 
@@ -136,7 +107,7 @@ jobs:
       run: python .github/workflows/run_tests.py
     - name: Upload Coverage
       env:
-        COVERALLS_FLAG_NAME: behave-ubuntu-${{ matrix.dcs }}-${{ matrix.python-version }}
+        COVERALLS_FLAG_NAME: behave-${{ matrix.os }}-${{ matrix.dcs }}-${{ matrix.python-version }}
         COVERALLS_PARALLEL: 'true'
         COVERALLS_REPO_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
         GITHUB_TOKEN: ${{ secrets.github_token }}
@@ -152,21 +123,22 @@ jobs:
       fail-fast: false
       matrix:
         os: [macos]  #, windows]
-        dcs: [etcd,etcd3,raft]
+        python-version: [3.7]
+        dcs: [etcd, etcd3, raft]
 
     steps:
     - uses: actions/checkout@v1
     - name: Set up Python
       uses: actions/setup-python@v2
       with:
-        python-version: 3.7
+        python-version: ${{ matrix.python-version }}
     - name: Install dependencies
       run: python .github/workflows/install_deps.py
     - name: Run behave tests
       run: python .github/workflows/run_tests.py
     - name: Upload Coverage
       env:
-        COVERALLS_FLAG_NAME: behave-${{ matrix.os }}-${{ matrix.dcs }}-3.7
+        COVERALLS_FLAG_NAME: behave-${{ matrix.os }}-${{ matrix.dcs }}-${{ matrix.python-version }}
         COVERALLS_PARALLEL: 'true'
         GITHUB_TOKEN: ${{ secrets.github_token }}
       run: |
