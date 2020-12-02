@@ -9,7 +9,7 @@ on:
     - v.*
 
 jobs:
-  unit-tests:
+  unit:
     runs-on: ${{ matrix.os }}-latest
     strategy:
       fail-fast: false
@@ -149,7 +149,7 @@ jobs:
 
   coveralls-finish:
     name: Finalize coveralls.io
-    needs: [unit-tests, behave-ubuntu, behave]
+    needs: [unit, behave, behavem]
     runs-on: ubuntu-latest
     steps:
     - uses: actions/setup-python@v2
