@@ -17,7 +17,9 @@ class CallbackExecutor(CancellableExecutor, Thread):
         self.start()
 
     def call(self, cmd):
+        logger.error('call %s', cmd)
         self._kill_process()
+        logger.error('killed old processes')
         with self._condition:
             self._cmd = cmd
             self._condition.notify()
@@ -30,7 +32,11 @@ class CallbackExecutor(CancellableExecutor, Thread):
                 cmd, self._cmd = self._cmd, None
 
             with self._lock:
+                logger.error('starting process %s', cmd)
                 if not self._start_process(cmd, close_fds=True):
                     continue
+            logger.error('started process %s', cmd)
             self._process.wait()
+            logger.error('process %s exited', cmd)
             self._kill_children()
+            logger.error('children exited')
