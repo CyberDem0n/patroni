@@ -138,7 +138,7 @@ class ZooKeeper(AbstractDCS):
 
     @property
     def ttl(self):
-        return self._client._session_timeout / 1000
+        return self._client._session_timeout / 1000.0
 
     def set_retry_timeout(self, retry_timeout):
         retry = self._client.retry if isinstance(self._client.retry, KazooRetry) else self._client._retry
