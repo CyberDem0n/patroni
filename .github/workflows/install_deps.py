@@ -80,7 +80,7 @@ def chmod_755(name):
 
 
 def unpack(archive, name):
-    print('Extracting {0} from {1}', name, archive)
+    print('Extracting {0} from {1}'.format(name, archive))
     func = unzip if archive.endswith('.zip') else untar
     name = func(archive, name)
     chmod_755(name)
