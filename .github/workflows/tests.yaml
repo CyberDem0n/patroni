@@ -81,9 +81,9 @@ jobs:
         COVERALLS_FLAG_NAME: unit-${{ matrix.os }}
         COVERALLS_PARALLEL: 'true'
         GITHUB_TOKEN: ${{ secrets.github_token }}
-      run: coveralls --verbose
+      run: coveralls
 
-  behave-ubuntu:
+  behave:
     runs-on: ${{ matrix.os }}-latest
     env:
       DCS: ${{ matrix.dcs }}
@@ -105,15 +105,18 @@ jobs:
       run: python .github/workflows/install_deps.py
     - name: Run behave tests
       run: python .github/workflows/run_tests.py
+    - uses: actions/setup-python@v2
+      with:
+        python-version: 3.9
+    - run: pip install coveralls
     - name: Upload Coverage
       env:
         COVERALLS_FLAG_NAME: behave-${{ matrix.os }}-${{ matrix.dcs }}-${{ matrix.python-version }}
         COVERALLS_PARALLEL: 'true'
-        COVERALLS_REPO_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
         GITHUB_TOKEN: ${{ secrets.github_token }}
-      run: coveralls --verbose
+      run: coveralls
 
-  behave:
+  behavem:
     runs-on: ${{ matrix.os }}-latest
     env:
       DCS: ${{ matrix.dcs }}
@@ -142,7 +145,7 @@ jobs:
         COVERALLS_PARALLEL: 'true'
         GITHUB_TOKEN: ${{ secrets.github_token }}
       run: |
-        coveralls --verbose
+        coveralls
 
   coveralls-finish:
     name: Finalize coveralls.io
