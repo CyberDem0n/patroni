@@ -144,8 +144,9 @@ def setup_kubernetes():
     url = 'https://localhost:8443'
     for _ in range(0, 20):
         try:
-            urlopen(url, cafile=cert_dir + '/' + ca_crt)
+            urlopen(url, cafile=(cert_dir + '/' + ca_crt))
         except Exception as e:
+            print(str(e))
             if getattr(e, 'code', None) == 401:
                 break
         time.sleep(1)
