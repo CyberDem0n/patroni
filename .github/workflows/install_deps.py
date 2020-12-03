@@ -114,8 +114,6 @@ def install_postgres():
 
 
 def setup_kubernetes():
-    from six.moves.urllib.request import urlopen
-
     get_file('https://storage.googleapis.com/minikube/k8sReleases/v1.7.0/localkube-linux-amd64', 'localkube')
     chmod_755('localkube')
 
@@ -128,7 +126,7 @@ def setup_kubernetes():
     api_crt = 'apiserver.crt'
     api_key = 'apiserver.key'
 
-    for _ in range(0, 120):
+    for _ in range(0, 10):
         try:
             files = os.listdir(cert_dir)
             if all(f in files for f in (ca_crt, api_crt, api_key)):
@@ -142,18 +140,9 @@ def setup_kubernetes():
 
     subprocess.call('sudo chmod 644 {0}/*'.format(cert_dir), shell=True)
 
-    url = 'https://localhost:8443'
     for _ in range(0, 20):
-        try:
-            urlopen(url, cafile=(cert_dir + '/' + ca_crt))
-        except Exception as e:
-            print(str(e))
-            if 'kubernetes.default.svc.cluster.local' in str(e):
-                time.sleep(5)
-                break
-            if getattr(e, 'code', None) == 401:
-                break
-        time.sleep(1)
+        if subprocess.call(['kubectl', 'get', 'serviceaccount', 'default']) == 0:
+            break
     else:
         print('localkube did not start')
         return 1
@@ -166,7 +155,7 @@ def setup_kubernetes():
 clusters:
 - cluster:
     certificate-authority: {0}/{1}
-    server: {2}
+    server: https://127.0.0.1:8443
   name: local
 contexts:
 - context:
@@ -179,9 +168,9 @@ preferences: {{}}
 users:
 - name: myself
   user:
-    client-certificate: {0}/{3}
-    client-key: {0}/{4}
-""".format(cert_dir, ca_crt, url, api_crt, api_key))
+    client-certificate: {0}/{2}
+    client-key: {0}/{3}
+""".format(cert_dir, ca_crt, api_crt, api_key))
     return 0
 
 
