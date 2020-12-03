@@ -39,7 +39,7 @@ def main():
         print(subprocess.call(['pgsql/bin/pg_ctl', 'initdb', '-D', 'fake', '-U', 'postgres']))
         env['COMSPEC'] = sys.executable + '"' + ' "' + os.path.abspath('.github/workflows/run_behave_windows.py')
         print('"' + env['COMSPEC'] + '"')
-        print(subprocess.call('pgsql/bin/pg_ctl -W -D fake -l behave.log start', shell=True, env=env))
+        print(subprocess.call(os.path.abspath('pgsql/bin/pg_ctl') + ' -W -D fake -l behave.log start', shell=True, env=env))
         for _ in range(0, 60):
             try:
                 with open('behave.log') as f:
