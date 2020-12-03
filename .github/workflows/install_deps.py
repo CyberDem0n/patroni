@@ -42,7 +42,8 @@ def install_packages(what):
     }
     packages['exhibitor'] = packages['zookeeper']
     packages = packages.get(what, [])
-    return subprocess.call(['sudo', 'apt-get', 'install', '-y', 'postgresql-13', 'expect-dev'] + packages)
+    version = {'etcd': '9.5', 'etcd3': '9.6', 'consul': 10, 'exhibitor': 11, 'kubernetes': 12, 'raft': 13}.get(what)
+    return subprocess.call(['sudo', 'apt-get', 'install', '-y', 'postgresql-' + str(version), 'expect-dev'] + packages)
 
 
 def get_file(url, name):
@@ -146,7 +147,9 @@ def setup_kubernetes():
         try:
             urlopen(url, cafile=(cert_dir + '/' + ca_crt))
         except Exception as e:
-            print(str(e))
+            if 'kubernetes.default.svc.cluster.local' in str(e):
+                time.sleep(5)
+                break
             if getattr(e, 'code', None) == 401:
                 break
         time.sleep(1)
