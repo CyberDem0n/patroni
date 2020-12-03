@@ -131,11 +131,10 @@ def setup_kubernetes():
     for _ in range(0, 120):
         try:
             files = os.listdir(cert_dir)
-            print(files)
             if all(f in files for f in (ca_crt, api_crt, api_key)):
                 break
-        except Exception as e:
-            print(str(e))
+        except Exception:
+            pass
         time.sleep(1)
     else:
         print('localkube did not start')
@@ -148,6 +147,7 @@ def setup_kubernetes():
         try:
             urlopen(url, cafile=(cert_dir + '/' + ca_crt))
         except Exception as e:
+            print(str(e))
             if 'kubernetes.default.svc.cluster.local' in str(e):
                 time.sleep(5)
                 break
