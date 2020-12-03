@@ -121,6 +121,14 @@ def setup_kubernetes():
     subprocess.Popen(['sudo', 'nohup', './localkube', '--logtostderr=true', '--enable-dns=false'],
                      stdout=devnull, stderr=devnull)
 
+    for _ in range(0, 120):
+        try:
+            if urlopen('http://127.0.0.1:8080/').code == 200:
+                break
+        except Exception:
+            pass
+        time.sleep(1)
+
     cert_dir = '/var/lib/localkube/certs'
     ca_crt = 'ca.crt'
     api_crt = 'apiserver.crt'
