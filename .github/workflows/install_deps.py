@@ -18,7 +18,7 @@ def install_requirements(what):
     finally:
         sys.path = old_path
     requirements = ['mock>=2.0.0', 'flake8', 'pytest', 'pytest-cov'] if what == 'all' else ['behave']
-    requirements += ['psycopg2-binary', 'codacy-coverage', 'coverage', 'coveralls']
+    requirements += ['psycopg2-binary', 'coverage']
     for r in read('requirements.txt').split('\n'):
         r = r.strip()
         if r != '':
@@ -42,7 +42,7 @@ def install_packages(what):
     }
     packages['exhibitor'] = packages['zookeeper']
     packages = packages.get(what, [])
-    return subprocess.call(['sudo', 'apt-get', 'install', '-y', 'postgresql-10', 'expect-dev', 'wget'] + packages)
+    return subprocess.call(['sudo', 'apt-get', 'install', '-y', 'postgresql-13', 'expect-dev'] + packages)
 
 
 def get_file(url, name):
@@ -113,6 +113,8 @@ def install_postgres():
 
 
 def setup_kubernetes():
+    from six.moves.urllib.request import urlopen
+
     get_file('https://storage.googleapis.com/minikube/k8sReleases/v1.7.0/localkube-linux-amd64', 'localkube')
     chmod_755('localkube')
 
@@ -120,9 +122,11 @@ def setup_kubernetes():
     subprocess.Popen(['sudo', 'nohup', './localkube', '--logtostderr=true', '--enable-dns=false'],
                      stdout=devnull, stderr=devnull)
     for _ in range(0, 120):
-        if subprocess.call(['wget', '-qO', '-', 'http://127.0.0.1:8080/'], stdout=devnull, stderr=devnull) == 0:
-            time.sleep(10)
-            break
+        try:
+            if urlopen('http://127.0.0.1:8080/').code == 200:
+                break
+        except Exception:
+            pass
         time.sleep(1)
     else:
         print('localkube did not start')

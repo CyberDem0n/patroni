@@ -23,7 +23,7 @@ def main():
 
     env = os.environ.copy()
     if sys.platform.startswith('linux'):
-        path = '/usr/lib/postgresql/10/bin:.'
+        path = '/usr/lib/postgresql/13/bin:.'
         unbuffer = ['timeout', '480', 'unbuffer']
     else:
         path = os.path.abspath(os.path.join('pgsql', 'bin'))

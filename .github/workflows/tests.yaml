@@ -74,14 +74,19 @@ jobs:
       run: python .github/workflows/install_deps.py
     - name: Run tests and flake8
       run: python .github/workflows/run_tests.py
+
     - name: Combine coverage
       run: python .github/workflows/run_tests.py combine
+
+    - name: Install coveralls
+      run: python -m pip install coveralls
+
     - name: Upload Coverage
       env:
         COVERALLS_FLAG_NAME: unit-${{ matrix.os }}
         COVERALLS_PARALLEL: 'true'
         GITHUB_TOKEN: ${{ secrets.github_token }}
-      run: coveralls
+      run: python -m coveralls
 
   behave:
     runs-on: ${{ matrix.os }}-latest
@@ -108,13 +113,14 @@ jobs:
     - uses: actions/setup-python@v2
       with:
         python-version: 3.9
-    - run: pip install coveralls
+    - name: Install coveralls
+      run: python -m pip install coveralls
     - name: Upload Coverage
       env:
         COVERALLS_FLAG_NAME: behave-${{ matrix.os }}-${{ matrix.dcs }}-${{ matrix.python-version }}
         COVERALLS_PARALLEL: 'true'
         GITHUB_TOKEN: ${{ secrets.github_token }}
-      run: coveralls
+      run: python -m coveralls
 
   behavem:
     runs-on: ${{ matrix.os }}-latest
@@ -139,13 +145,14 @@ jobs:
       run: python .github/workflows/install_deps.py
     - name: Run behave tests
       run: python .github/workflows/run_tests.py
+    - name: Install coveralls
+      run: python -m pip install coveralls
     - name: Upload Coverage
       env:
         COVERALLS_FLAG_NAME: behave-${{ matrix.os }}-${{ matrix.dcs }}-${{ matrix.python-version }}
         COVERALLS_PARALLEL: 'true'
         GITHUB_TOKEN: ${{ secrets.github_token }}
-      run: |
-        coveralls
+      run: python -m coveralls
 
   coveralls-finish:
     name: Finalize coveralls.io
@@ -153,7 +160,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/setup-python@v2
-    - run: pip install coveralls
-    - run: coveralls --finish
+    - run: python -m pip install coveralls
+    - run: python -m coveralls --finish
       env:
         GITHUB_TOKEN: ${{ secrets.github_token }}
