@@ -42,8 +42,8 @@ def install_packages(what):
     }
     packages['exhibitor'] = packages['zookeeper']
     packages = packages.get(what, [])
-    version = {'etcd': '9.6', 'etcd3': '9.6', 'consul': 10, 'exhibitor': 11, 'kubernetes': 12, 'raft': 13}.get(what)
-    return subprocess.call(['sudo', 'apt-get', 'install', '-y', 'postgresql-' + str(version), 'expect-dev'] + packages)
+    ver = str({'etcd': '9.6', 'etcd3': '9.6', 'consul': 10, 'exhibitor': 11, 'kubernetes': 12, 'raft': 13}.get(what))
+    return subprocess.call(['sudo', 'apt-get', 'install', '-y', 'postgresql-' + ver, 'expect-dev', 'wget'] + packages)
 
 
 def get_file(url, name):
@@ -120,26 +120,16 @@ def setup_kubernetes():
     devnull = open(os.devnull, 'w')
     subprocess.Popen(['sudo', 'nohup', './localkube', '--logtostderr=true', '--enable-dns=false'],
                      stdout=devnull, stderr=devnull)
-
     for _ in range(0, 120):
-        try:
-            if urlopen('http://127.0.0.1:8080/').code == 200:
-                time.sleep(10)
-                break
-        except Exception:
-            pass
+        if subprocess.call(['wget', '-qO', '-', 'http://127.0.0.1:8080/'], stdout=devnull, stderr=devnull) == 0:
+            time.sleep(10)
+            break
         time.sleep(1)
     else:
         print('localkube did not start')
         return 1
 
-    cert_dir = '/var/lib/localkube/certs'
-    ca_crt = 'ca.crt'
-    api_crt = 'apiserver.crt'
-    api_key = 'apiserver.key'
-
-    subprocess.call('sudo chmod 644 {0}/*'.format(cert_dir), shell=True)
-
+    subprocess.call('sudo chmod 644 /var/lib/localkube/certs/*', shell=True)
     print('Set up .kube/config')
     kube = os.path.join(os.path.expanduser('~'), '.kube')
     os.makedirs(kube)
@@ -147,7 +137,7 @@ def setup_kubernetes():
         f.write("""apiVersion: v1
 clusters:
 - cluster:
-    certificate-authority: {0}/{1}
+    certificate-authority: /var/lib/localkube/certs/ca.crt
     server: https://127.0.0.1:8443
   name: local
 contexts:
@@ -157,14 +147,13 @@ contexts:
   name: local
 current-context: local
 kind: Config
-preferences: {{}}
+preferences: {}
 users:
 - name: myself
   user:
-    client-certificate: {0}/{2}
-    client-key: {0}/{3}
-""".format(cert_dir, ca_crt, api_crt, api_key))
-
+    client-certificate: /var/lib/localkube/certs/apiserver.crt
+    client-key: /var/lib/localkube/certs/apiserver.key
+""")
     return 0
 
 
