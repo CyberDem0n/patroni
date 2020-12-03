@@ -140,13 +140,6 @@ def setup_kubernetes():
 
     subprocess.call('sudo chmod 644 {0}/*'.format(cert_dir), shell=True)
 
-    for _ in range(0, 60):
-        if subprocess.call(['kubectl', 'get', 'endpoints', 'kubernetes']) == 0:
-            break
-    else:
-        print('localkube did not start')
-        return 1
-
     print('Set up .kube/config')
     kube = os.path.join(os.path.expanduser('~'), '.kube')
     os.makedirs(kube)
@@ -171,7 +164,12 @@ users:
     client-certificate: {0}/{2}
     client-key: {0}/{3}
 """.format(cert_dir, ca_crt, api_crt, api_key))
-    return 0
+
+    for _ in range(0, 60):
+        if subprocess.call(['kubectl', 'get', 'endpoints', 'kubernetes']) == 0:
+            return 0
+    print('localkube did not start')
+    return 1
 
 
 def setup_exhibitor():
