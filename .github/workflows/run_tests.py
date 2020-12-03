@@ -23,7 +23,7 @@ def main():
 
     env = os.environ.copy()
     if sys.platform.startswith('linux'):
-        version = {'etcd': '9.5', 'etcd3': '9.6', 'consul': 10, 'exhibitor': 11, 'kubernetes': 12, 'raft': 13}.get(what)
+        version = {'etcd': '9.6', 'etcd3': '9.6', 'consul': 10, 'exhibitor': 11, 'kubernetes': 12, 'raft': 13}.get(what)
         path = '/usr/lib/postgresql/{0}/bin:.'.format(version)
         unbuffer = ['timeout', '600', 'unbuffer']
     else:

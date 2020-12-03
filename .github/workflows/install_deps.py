@@ -42,7 +42,7 @@ def install_packages(what):
     }
     packages['exhibitor'] = packages['zookeeper']
     packages = packages.get(what, [])
-    version = {'etcd': '9.5', 'etcd3': '9.6', 'consul': 10, 'exhibitor': 11, 'kubernetes': 12, 'raft': 13}.get(what)
+    version = {'etcd': '9.6', 'etcd3': '9.6', 'consul': 10, 'exhibitor': 11, 'kubernetes': 12, 'raft': 13}.get(what)
     return subprocess.call(['sudo', 'apt-get', 'install', '-y', 'postgresql-' + str(version), 'expect-dev'] + packages)
 
 
@@ -131,10 +131,11 @@ def setup_kubernetes():
     for _ in range(0, 120):
         try:
             files = os.listdir(cert_dir)
+            print(files)
             if all(f in files for f in (ca_crt, api_crt, api_key)):
                 break
-        except Exception:
-            pass
+        except Exception as e:
+            print(str(e))
         time.sleep(1)
     else:
         print('localkube did not start')
