@@ -3,6 +3,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 
 
 def main():
@@ -35,7 +36,7 @@ def main():
     env['DCS'] = what
     if os.name == 'nt':
         subprocess.call(['pgsql/bin/postgres', '-V'])
-        subprocess.call(['pgsql/bin/pg_ctl', 'initdb', '-D', 'fake', '-U', 'postgres'])
+        print(subprocess.call(['pgsql/bin/pg_ctl', 'initdb', '-D', 'fake', '-U', 'postgres']))
         env['COMSPEC'] = sys.executable + '"' + ' "' + os.path.abspath('.github/workflows/run_behave_windows.py')
         print('"' + env['COMSPEC'] + '"')
         print(subprocess.call(['pgsql/bin/pg_ctl', '-W', '-D', 'fake', '-l', 'behave.log', 'start'], env=env))
