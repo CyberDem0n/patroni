@@ -124,20 +124,7 @@ def setup_kubernetes():
     for _ in range(0, 120):
         try:
             if urlopen('http://127.0.0.1:8080/').code == 200:
-                break
-        except Exception:
-            pass
-        time.sleep(1)
-
-    cert_dir = '/var/lib/localkube/certs'
-    ca_crt = 'ca.crt'
-    api_crt = 'apiserver.crt'
-    api_key = 'apiserver.key'
-
-    for _ in range(0, 10):
-        try:
-            files = os.listdir(cert_dir)
-            if all(f in files for f in (ca_crt, api_crt, api_key)):
+                time.sleep(10)
                 break
         except Exception:
             pass
@@ -145,6 +132,11 @@ def setup_kubernetes():
     else:
         print('localkube did not start')
         return 1
+
+    cert_dir = '/var/lib/localkube/certs'
+    ca_crt = 'ca.crt'
+    api_crt = 'apiserver.crt'
+    api_key = 'apiserver.key'
 
     subprocess.call('sudo chmod 644 {0}/*'.format(cert_dir), shell=True)
 
@@ -173,11 +165,7 @@ users:
     client-key: {0}/{3}
 """.format(cert_dir, ca_crt, api_crt, api_key))
 
-    for _ in range(0, 60):
-        if subprocess.call(['kubectl', 'get', 'endpoints', 'kubernetes']) == 0:
-            return 0
-    print('localkube did not start')
-    return 1
+    return 0
 
 
 def setup_exhibitor():
