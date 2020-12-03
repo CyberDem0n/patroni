@@ -140,8 +140,8 @@ def setup_kubernetes():
 
     subprocess.call('sudo chmod 644 {0}/*'.format(cert_dir), shell=True)
 
-    for _ in range(0, 20):
-        if subprocess.call(['kubectl', 'get', 'serviceaccount', 'default']) == 0:
+    for _ in range(0, 60):
+        if subprocess.call(['kubectl', 'get', 'endpoints', 'kubernetes']) == 0:
             break
     else:
         print('localkube did not start')
