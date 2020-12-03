@@ -146,7 +146,7 @@ def setup_kubernetes():
         try:
             urlopen(url, cafile=cert_dir + '/' + ca_crt)
         except Exception as e:
-            if getattr(e, 'code') == 401:
+            if getattr(e, 'code', None) == 401:
                 break
         time.sleep(1)
     else:
