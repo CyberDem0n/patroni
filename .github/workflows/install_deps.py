@@ -121,9 +121,16 @@ def setup_kubernetes():
     devnull = open(os.devnull, 'w')
     subprocess.Popen(['sudo', 'nohup', './localkube', '--logtostderr=true', '--enable-dns=false'],
                      stdout=devnull, stderr=devnull)
+
+    cert_dir = '/var/lib/localkube/certs'
+    ca_crt = 'ca.crt'
+    api_crt = 'apiserver.crt'
+    api_key = 'apiserver.key'
+
     for _ in range(0, 120):
         try:
-            if urlopen('http://127.0.0.1:8080/').code == 200:
+            files = os.listdir(cert_dir)
+            if all(f in files for f in (ca_crt, api_crt, api_key)):
                 break
         except Exception:
             pass
@@ -132,7 +139,20 @@ def setup_kubernetes():
         print('localkube did not start')
         return 1
 
-    subprocess.call('sudo chmod 644 /var/lib/localkube/certs/*', shell=True)
+    subprocess.call('sudo chmod 644 {0}/*'.format(cert_dir), shell=True)
+
+    url = 'https://localhost:8443'
+    for _ in range(0, 20):
+        try:
+            urlopen(url, cafile=cert_dir + '/' + ca_crt)
+        except Exception as e:
+            if getattr(e, 'code') == 401:
+                break
+        time.sleep(1)
+    else:
+        print('localkube did not start')
+        return 1
+
     print('Set up .kube/config')
     kube = os.path.join(os.path.expanduser('~'), '.kube')
     os.makedirs(kube)
@@ -140,8 +160,8 @@ def setup_kubernetes():
         f.write("""apiVersion: v1
 clusters:
 - cluster:
-    certificate-authority: /var/lib/localkube/certs/ca.crt
-    server: https://127.0.0.1:8443
+    certificate-authority: {0}/{1}
+    server: {2}
   name: local
 contexts:
 - context:
@@ -150,13 +170,13 @@ contexts:
   name: local
 current-context: local
 kind: Config
-preferences: {}
+preferences: {{}}
 users:
 - name: myself
   user:
-    client-certificate: /var/lib/localkube/certs/apiserver.crt
-    client-key: /var/lib/localkube/certs/apiserver.key
-""")
+    client-certificate: {0}/{3}
+    client-key: {0}/{4}
+""".format(cert_dir, ca_crt, url, api_crt, api_key))
     return 0
 
 
