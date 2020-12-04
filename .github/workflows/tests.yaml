@@ -93,6 +93,7 @@ jobs:
       with:
         project-token: ${{ secrets.CODACY_PROJECT_TOKEN }}
         coverage-reports: coverage.xml
+      if: matrix.os == 'ubuntu'
 
   behave:
     runs-on: ${{ matrix.os }}-latest
