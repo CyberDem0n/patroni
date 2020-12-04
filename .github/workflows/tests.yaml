@@ -78,15 +78,20 @@ jobs:
     - name: Combine coverage
       run: python .github/workflows/run_tests.py combine
 
-    - name: Install coveralls
-      run: python -m pip install coveralls
+    - name: Install coveralls and codacy-coverage
+      run: python -m pip install coveralls codacy-coverage
 
-    - name: Upload Coverage
+    - name: Upload Coverall coverage
       env:
         COVERALLS_FLAG_NAME: unit-${{ matrix.os }}
         COVERALLS_PARALLEL: 'true'
         GITHUB_TOKEN: ${{ secrets.github_token }}
       run: python -m coveralls
+
+    - name: Upload codacy coverage
+      env:
+        CODACY_PROJECT_TOKEN: ${{secrets.CODACY_PROJECT_TOKEN}}
+      run: python -m codacy
 
   behave:
     runs-on: ${{ matrix.os }}-latest
