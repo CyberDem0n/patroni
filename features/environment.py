@@ -851,7 +851,7 @@ class WatchdogMonitor(object):
 def before_all(context):
     os.environ.update({'PATRONI_RESTAPI_USERNAME': 'username', 'PATRONI_RESTAPI_PASSWORD': 'password'})
     context.ci = any(a in os.environ for a in ('TRAVIS_BUILD_NUMBER', 'BUILD_NUMBER', 'GITHUB_ACTIONS'))
-    context.timeout_multiplier = 5 if context.ci else 1
+    context.timeout_multiplier = 5 if context.ci else 1  # MacOS sometimes is VERY slow
     context.pctl = PatroniPoolController(context)
     context.dcs_ctl = context.pctl.known_dcs[context.pctl.dcs](context)
     context.dcs_ctl.start()
