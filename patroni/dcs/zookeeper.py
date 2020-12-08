@@ -373,6 +373,7 @@ class ZooKeeper(AbstractDCS):
         return self.set_sync_state_value("{}", index)
 
     def watch(self, leader_index, timeout):
-        if super(ZooKeeper, self).watch(leader_index, timeout) and not self._fetch_optime:
+        ret = super(ZooKeeper, self).watch(leader_index, timeout)
+        if ret and not self._fetch_optime:
             self._fetch_cluster = True
-        return self._fetch_cluster
+        return ret or self._fetch_cluster
