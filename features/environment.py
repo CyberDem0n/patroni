@@ -576,12 +576,13 @@ class ExhibitorController(ZooKeeperController):
 
     def __init__(self, context):
         super(ExhibitorController, self).__init__(context, False)
-        exhibitor = HTTPServer(('', 8181), MockExhibitor)
+        port = 8181
+        exhibitor = HTTPServer(('', port), MockExhibitor)
         exhibitor.daemon_thread = True
         exhibitor_thread = threading.Thread(target=exhibitor.serve_forever)
         exhibitor_thread.daemon = True
         exhibitor_thread.start()
-        os.environ.update({'PATRONI_EXHIBITOR_HOSTS': 'localhost', 'PATRONI_EXHIBITOR_PORT': '8181'})
+        os.environ.update({'PATRONI_EXHIBITOR_HOSTS': 'localhost', 'PATRONI_EXHIBITOR_PORT': str(port)})
 
 
 class RaftController(AbstractDcsController):
