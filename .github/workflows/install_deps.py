@@ -47,7 +47,11 @@ def install_packages(what):
 
 
 def get_file(url, name):
-    from six.moves.urllib.request import urlretrieve
+    try:
+        from urllib.request import urlretrieve
+    except ImportError:
+        from urllib import urlretrieve
+
     print('Downloading ' + url)
     urlretrieve(url, name)
 
