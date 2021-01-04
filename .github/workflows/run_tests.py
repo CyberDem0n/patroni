@@ -33,8 +33,12 @@ def main():
         unbuffer = []
     env['PATH'] = path + os.pathsep + env['PATH']
     env['DCS'] = what
-
-    ret = subprocess.call(unbuffer + [sys.executable, '-m', 'behave'], env=env)
+    if os.name == 'nt':
+        subprocess.call(['pgsql/bin/postgres', '-V'])
+        subprocess.call(['pgsql/bin/pg_ctl', 'initdb', '-D', 'fake', '-U', 'postgres'])
+        ret = 0
+    else:
+        ret = subprocess.call(unbuffer + [sys.executable, '-m', 'behave'], env=env)
 
     if ret != 0:
         if subprocess.call('grep . features/output/*_failed/*postgres?.*', shell=True) != 0:

@@ -69,15 +69,20 @@ class Patroni(AbstractPatroniDaemon):
         return bool(self.tags.get('nosync', False))
 
     def reload_config(self, sighup=False, local=False):
+        logger.error('reload_config1')
         try:
             super(Patroni, self).reload_config(sighup, local)
+            logger.error('reload_config2')
             if local:
                 self.tags = self.get_tags()
                 self.request.reload_config(self.config)
                 self.api.reload_config(self.config['restapi'])
             self.watchdog.reload_config(self.config)
+            logger.error('reload_config3')
             self.postgresql.reload_config(self.config['postgresql'], sighup)
+            logger.error('reload_config4')
             self.dcs.reload_config(self.config)
+            logger.error('reload_config5')
         except Exception:
             logger.exception('Failed to reload config_file=%s', self.config.config_file)
 
@@ -93,6 +98,7 @@ class Patroni(AbstractPatroniDaemon):
         self.next_run += self.dcs.loop_wait
         current_time = time.time()
         nap_time = self.next_run - current_time
+        logger.error('loop_wait=%s nap_time=%s', self.dcs.loop_wait, nap_time)
         if nap_time <= 0:
             self.next_run = current_time
             # Release the GIL so we don't starve anyone waiting on async_executor lock
@@ -100,6 +106,7 @@ class Patroni(AbstractPatroniDaemon):
             # Warn user that Patroni is not keeping up
             logger.warning("Loop time exceeded, rescheduling immediately.")
         elif self.ha.watch(nap_time):
+            logger.error('watch finished')
             self.next_run = time.time()
 
     def run(self):
@@ -115,8 +122,10 @@ class Patroni(AbstractPatroniDaemon):
             self.reload_config()
 
         if self.postgresql.role != 'uninitialized':
+            logger.error('save_cache')
             self.config.save_cache()
 
+        logger.error('schedule_next_run')
         self.schedule_next_run()
 
     def _shutdown(self):

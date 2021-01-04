@@ -518,6 +518,7 @@ class ObjectCache(Thread):
                           _preload_content=False, watch=True, resource_version=resource_version)
 
     def set(self, name, value):
+        logger.debug('set(%s, %s)', name, value)
         with self._object_cache_lock:
             old_value = self._object_cache.get(name)
             ret = not old_value or int(old_value.metadata.resource_version) < int(value.metadata.resource_version)
@@ -526,6 +527,7 @@ class ObjectCache(Thread):
         return ret, old_value
 
     def delete(self, name, resource_version):
+        logger.debug('delete(%s, %s)', name, resource_version)
         with self._object_cache_lock:
             old_value = self._object_cache.get(name)
             ret = old_value and int(old_value.metadata.resource_version) < int(resource_version)
