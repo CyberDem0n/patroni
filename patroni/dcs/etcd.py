@@ -426,6 +426,20 @@ class EtcdClient(AbstractEtcdClientWithFailover):
         return self.http.request
 
 
+class ReturnFalseException(Exception):
+    pass
+
+
+def catch_return_false_exception(func):
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except ReturnFalseException:
+            return False
+
+    return wrapper
+
+
 class AbstractEtcd(AbstractDCS):
 
     def __init__(self, config, client_cls, retry_errors_cls):
@@ -456,6 +470,20 @@ class AbstractEtcd(AbstractDCS):
         self._has_failed = True
         if isinstance(raise_ex, Exception):
             raise raise_ex
+
+    def _run_and_handle_exceptions(self, method, *args, **kwargs):
+        """:returns: a tuple, first value is a boolean, indicating success
+                     and the second is a value returned from a called function"""
+        retry = kwargs.pop('retry', self._retry.copy())
+        try:
+            return retry(method, *args, **kwargs) if retry else method(*args, **kwargs)
+        except (RetryFailedError, etcd.EtcdConnectionFailed) as e:
+            raise self._client.ERROR_CLS(e)
+        except etcd.EtcdException as e:
+            self._handle_exception(e)
+            raise ReturnFalseException
+        except Exception as e:
+            self._handle_exception(e, raise_ex=self._client.ERROR_CLS('unexpected error'))
 
     @staticmethod
     def set_socket_options(sock, socket_options):
@@ -671,8 +699,12 @@ class Etcd(AbstractEtcd):
                                    prevExist=False))
         except etcd.EtcdAlreadyExist:
             logger.info('Could not take out TTL lock')
-        except (RetryFailedError, etcd.EtcdException):
-            pass
+        except (RetryFailedError, etcd.EtcdConnectionFailed) as e:
+            raise EtcdError(e)
+        except etcd.EtcdException as e:
+            self._handle_exception(e)
+        except Exception as e:
+            self._handle_exception(e, raise_ex=EtcdError('unexpected error'))
         return False
 
     @catch_etcd_errors
@@ -691,9 +723,10 @@ class Etcd(AbstractEtcd):
     def _write_status(self, value):
         return self._client.set(self.status_path, value)
 
-    @catch_etcd_errors
+    @catch_return_false_exception
     def _update_leader(self):
-        return self.retry(self._client.write, self.leader_path, self._name, prevValue=self._name, ttl=self._ttl)
+        return self._run_and_handle_exceptions(self._client.write, self.leader_path, self._name,
+                                               prevValue=self._name, ttl=self._ttl) is not None
 
     @catch_etcd_errors
     def initialize(self, create_new=True, sysid=""):

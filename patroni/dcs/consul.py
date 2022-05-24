@@ -372,11 +372,6 @@ class Consul(AbstractDCS):
 
             # get leader
             leader = nodes.get(self._LEADER)
-            if not self._ctl and leader and leader['Value'] == self._name \
-                    and self._session != leader.get('Session', 'x'):
-                logger.info('I am leader but not owner of the session. Removing leader node')
-                self._client.kv.delete(self.leader_path, cas=leader['ModifyIndex'])
-                leader = None
 
             if leader:
                 member = Member(-1, leader['Value'], None, {})
@@ -543,11 +538,41 @@ class Consul(AbstractDCS):
     def _write_status(self, value):
         return self._client.kv.put(self.status_path, value)
 
-    @catch_consul_errors
+    def _run_and_handle_exceptions(self, method, *args, **kwargs):
+        retry = kwargs.pop('retry', None)
+        try:
+            retry(method, *args, **kwargs) if retry else method(*args, **kwargs)
+            return True
+        except (RetryFailedError, InvalidSession, HTTPException, HTTPError, socket.error, socket.timeout) as e:
+            raise ConsulError(e)
+        except ConsulException:
+            return False
+
     def _update_leader(self):
+        retry = self._retry.copy()
+
+        if not self._run_and_handle_exceptions(self._do_refresh_session, retry=retry):
+            return False
+
         if self._session:
-            self.retry(self._client.session.renew, self._session)
-            self._last_session_refresh = time.time()
+            cluster = self.cluster
+            leader_session = cluster and isinstance(cluster.leader, Leader) and cluster.leader.session
+            if leader_session != self._session:
+                retry.deadline = retry.stoptime - time.time()
+                if retry.deadline < 1:
+                    raise ConsulError('update_leader timeout')
+                logger.warning('Recreating the leader key due to session mismatch')
+                if cluster.leader and not self._run_and_handle_exceptions(self._client.kv.delete, self.leader_path,
+                                                                          cas=cluster.leader.index):
+                    return False
+
+                retry.deadline = retry.stoptime - time.time()
+                if retry.deadline < 0.5:
+                    raise ConsulError('update_leader timeout')
+                if not self._run_and_handle_exceptions(self._client.kv.put, self.leader_path,
+                                                       self._name, acquire=self._session):
+                    return False
+
         return bool(self._session)
 
     @catch_consul_errors

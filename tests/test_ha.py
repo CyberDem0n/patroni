@@ -202,7 +202,8 @@ class TestHa(PostgresInit):
 
     def test_update_lock(self):
         self.p.last_operation = Mock(side_effect=PostgresConnectionException(''))
-        self.ha.dcs.update_leader = Mock(side_effect=Exception)
+        self.ha.dcs.update_leader = Mock(side_effect=[DCSError(''), Exception])
+        self.assertRaises(DCSError, self.ha.update_lock)
         self.assertFalse(self.ha.update_lock(True))
 
     @patch.object(Postgresql, 'received_timeline', Mock(return_value=None))
@@ -1225,3 +1226,8 @@ class TestHa(PostgresInit):
         self.ha.fetch_node_status = Mock(return_value=_MemberStatus(self.ha.cluster.members[0],
                                                                     True, True, 0, 2, None, {}, False))
         self.assertFalse(self.ha.is_failover_possible(self.ha.cluster.members))
+
+    def test_acquire_lock(self):
+        self.ha.dcs.attempt_to_acquire_leader = Mock(side_effect=[DCSError('foo'), Exception])
+        self.assertRaises(DCSError, self.ha.acquire_lock)
+        self.assertFalse(self.ha.acquire_lock())

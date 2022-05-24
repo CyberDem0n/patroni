@@ -146,7 +146,13 @@ class Ha(object):
         self._leader_timeline = None if cluster.is_unlocked() else cluster.leader.timeline
 
     def acquire_lock(self):
-        ret = self.dcs.attempt_to_acquire_leader()
+        try:
+            ret = self.dcs.attempt_to_acquire_leader()
+        except DCSError:
+            raise
+        except Exception:
+            logger.exception('Unexpected exception raised from attempt_to_acquire_leader, please report it as a BUG')
+            ret = False
         self.set_is_leader(ret)
         return ret
 
@@ -160,6 +166,8 @@ class Ha(object):
                 logger.exception('Exception when called state_handler.last_operation()')
         try:
             ret = self.dcs.update_leader(last_lsn, slots)
+        except DCSError:
+            raise
         except Exception:
             logger.exception('Unexpected exception raised from update_leader, please report it as a BUG')
             ret = False

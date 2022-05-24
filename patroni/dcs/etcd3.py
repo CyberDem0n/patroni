@@ -13,7 +13,8 @@ import urllib3
 from threading import Condition, Lock, Thread
 
 from . import ClusterConfig, Cluster, Failover, Leader, Member, SyncState, TimelineHistory
-from .etcd import AbstractEtcdClientWithFailover, AbstractEtcd, catch_etcd_errors
+from .etcd import AbstractEtcdClientWithFailover, AbstractEtcd,\
+        catch_etcd_errors, ReturnFalseException, catch_return_false_exception
 from ..exceptions import DCSError, PatroniException
 from ..utils import deep_compare, enable_keepalive, iter_response_objects, RetryFailedError, USER_AGENT
 
@@ -733,21 +734,34 @@ class Etcd3(AbstractEtcd):
     def take_leader(self):
         return self.retry(self._client.put, self.leader_path, self._name, self._lease)
 
-    @catch_etcd_errors
-    def _do_attempt_to_acquire_leader(self, permanent):
+    def _do_attempt_to_acquire_leader(self, permanent, retry):
         try:
-            return self.retry(self._client.put, self.leader_path, self._name, None if permanent else self._lease, 0)
+            return retry(self._client.put, self.leader_path, self._name, None if permanent else self._lease, 0)
         except LeaseNotFound:
-            self._lease = None
             logger.error('Our lease disappeared from Etcd. Will try to get a new one and retry attempt')
-            self.refresh_lease()
-            return self.retry(self._client.put, self.leader_path, self._name, None if permanent else self._lease, 0)
+            self._lease = None
+            retry.deadline = retry.stoptime - time.time()
 
+            retry(self._do_refresh_lease)
+
+            retry.deadline = retry.stoptime - time.time()
+            if retry.deadline < 1:
+                raise Etcd3Error('_do_attempt_to_acquire_leader timeout')
+
+            return retry(self._client.put, self.leader_path, self._name, None if permanent else self._lease, 0)
+
+    @catch_return_false_exception
     def attempt_to_acquire_leader(self, permanent=False):
-        if not self._lease and not permanent:
-            self.refresh_lease()
+        retry = self._retry.copy()
 
-        ret = self._do_attempt_to_acquire_leader(permanent)
+        if not permanent:
+            self._run_and_handle_exceptions(self._do_refresh_lease, retry=retry)
+
+            retry.deadline = retry.stoptime - time.time()
+            if retry.deadline < 1:
+                raise Etcd3Error('attempt_to_acquire_leader timeout')
+
+        ret = self._run_and_handle_exceptions(self._do_attempt_to_acquire_leader, permanent, retry, retry=None)
         if not ret:
             logger.info('Could not take out TTL lock')
         return ret
@@ -768,18 +782,25 @@ class Etcd3(AbstractEtcd):
     def _write_status(self, value):
         return self._client.put(self.status_path, value)
 
-    @catch_etcd_errors
+    @catch_return_false_exception
     def _update_leader(self):
-        if not self._lease:
-            self.refresh_lease()
-        elif self.retry(self._client.lease_keepalive, self._lease):
-            self._last_lease_refresh = time.time()
+        retry = self._retry.copy()
+
+        self._run_and_handle_exceptions(self._do_refresh_lease, retry=retry)
 
         if self._lease:
             cluster = self.cluster
             leader_lease = cluster and isinstance(cluster.leader, Leader) and cluster.leader.session
             if leader_lease != self._lease:
-                self.take_leader()
+                retry.deadline = retry.stoptime - time.time()
+                if retry.deadline < 1:
+                    raise Etcd3Error('update_leader timeout')
+
+                try:
+                    self._run_and_handle_exceptions(self._client.put, self.leader_path,
+                                                    self._name, self._lease, retry=retry)
+                except ReturnFalseException:
+                    pass
         return bool(self._lease)
 
     @catch_etcd_errors
