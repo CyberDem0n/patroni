@@ -474,7 +474,7 @@ class AbstractEtcd(AbstractDCS):
     def _run_and_handle_exceptions(self, method, *args, **kwargs):
         """:returns: a tuple, first value is a boolean, indicating success
                      and the second is a value returned from a called function"""
-        retry = kwargs.pop('retry', self._retry.copy())
+        retry = kwargs.pop('retry', self.retry)
         try:
             return retry(method, *args, **kwargs) if retry else method(*args, **kwargs)
         except (RetryFailedError, etcd.EtcdConnectionFailed) as e:

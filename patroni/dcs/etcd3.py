@@ -735,27 +735,35 @@ class Etcd3(AbstractEtcd):
         return self.retry(self._client.put, self.leader_path, self._name, self._lease)
 
     def _do_attempt_to_acquire_leader(self, permanent, retry):
+        def _retry(*args, **kwargs):
+            kwargs['retry'] = retry
+            return retry(*args, **kwargs)
+
         try:
-            return retry(self._client.put, self.leader_path, self._name, None if permanent else self._lease, 0)
+            return _retry(self._client.put, self.leader_path, self._name, None if permanent else self._lease, 0)
         except LeaseNotFound:
             logger.error('Our lease disappeared from Etcd. Will try to get a new one and retry attempt')
             self._lease = None
             retry.deadline = retry.stoptime - time.time()
 
-            retry(self._do_refresh_lease)
+            _retry(self._do_refresh_lease)
 
             retry.deadline = retry.stoptime - time.time()
             if retry.deadline < 1:
                 raise Etcd3Error('_do_attempt_to_acquire_leader timeout')
 
-            return retry(self._client.put, self.leader_path, self._name, None if permanent else self._lease, 0)
+            return _retry(self._client.put, self.leader_path, self._name, None if permanent else self._lease, 0)
 
     @catch_return_false_exception
     def attempt_to_acquire_leader(self, permanent=False):
         retry = self._retry.copy()
 
+        def _retry(*args, **kwargs):
+            kwargs['retry'] = retry
+            return retry(*args, **kwargs)
+
         if not permanent:
-            self._run_and_handle_exceptions(self._do_refresh_lease, retry=retry)
+            self._run_and_handle_exceptions(self._do_refresh_lease, retry=_retry)
 
             retry.deadline = retry.stoptime - time.time()
             if retry.deadline < 1:
@@ -786,7 +794,11 @@ class Etcd3(AbstractEtcd):
     def _update_leader(self):
         retry = self._retry.copy()
 
-        self._run_and_handle_exceptions(self._do_refresh_lease, retry=retry)
+        def _retry(*args, **kwargs):
+            kwargs['retry'] = retry
+            return retry(*args, **kwargs)
+
+        self._run_and_handle_exceptions(self._do_refresh_lease, retry=_retry)
 
         if self._lease:
             cluster = self.cluster
@@ -798,7 +810,7 @@ class Etcd3(AbstractEtcd):
 
                 try:
                     self._run_and_handle_exceptions(self._client.put, self.leader_path,
-                                                    self._name, self._lease, retry=retry)
+                                                    self._name, self._lease, retry=_retry)
                 except ReturnFalseException:
                     pass
         return bool(self._lease)
