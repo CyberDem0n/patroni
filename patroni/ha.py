@@ -1507,8 +1507,12 @@ class Ha(object):
             dcs_failed = True
             logger.error('Error communicating with DCS')
             if not self.is_paused() and self.state_handler.is_running() and self.state_handler.is_leader():
+                msg = 'demoting self because DCS is not accessible and I was a leader'
+                if not self._async_executor.try_run_async(msg, self.demote, ('offline',)):
+                    return msg
+                logger.warning('AsyncExecutor is busy, demoting from the main thread')
                 self.demote('offline')
-                return 'demoted self because DCS is not accessible and i was a leader'
+                return 'demoted self because DCS is not accessible and I was a leader'
             return 'DCS is not accessible'
         except (psycopg.Error, PostgresConnectionException):
             return 'Error communicating with PostgreSQL. Will try again later'
