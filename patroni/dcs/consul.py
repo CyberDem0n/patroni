@@ -287,7 +287,7 @@ class Consul(AbstractDCS):
 
     def _do_refresh_session(self):
         """:returns: `!True` if it had to create new session"""
-        if self._session and self._last_session_refresh + self._loop_wait > time.time():
+        if self._session and self._last_session_refresh + self._loop_wait - 0.5 > time.time():
             return False
 
         if self._session:

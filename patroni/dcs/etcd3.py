@@ -600,7 +600,7 @@ class Etcd3(AbstractEtcd):
             self._lease = None
 
     def _do_refresh_lease(self, retry=None):
-        if self._lease and self._last_lease_refresh + self._loop_wait > time.time():
+        if self._lease and self._last_lease_refresh + self._loop_wait - 0.5 > time.time():
             return False
 
         if self._lease and not self._client.lease_keepalive(self._lease, retry):
