@@ -455,6 +455,8 @@ class TestHa(PostgresInit):
     def test_no_etcd_connection_master_demote(self):
         self.ha.load_cluster_from_dcs = Mock(side_effect=DCSError('Etcd is not responding properly'))
         self.assertEqual(self.ha.run_cycle(), 'demoting self because DCS is not accessible and I was a leader')
+        self.ha._async_executor.schedule('dummy')
+        self.assertEqual(self.ha.run_cycle(), 'demoted self because DCS is not accessible and I was a leader')
 
     @patch('time.sleep', Mock())
     def test_bootstrap_from_another_member(self):

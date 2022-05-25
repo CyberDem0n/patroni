@@ -706,7 +706,8 @@ class Kubernetes(AbstractDCS):
         kwargs['_retry'] = retry
         return retry(*args, **kwargs)
 
-    def _run_and_handle_exceptions(self, method, *args, **kwargs):
+    @staticmethod
+    def _run_and_handle_exceptions(method, *args, **kwargs):
         try:
             return method(*args, **kwargs)
         except k8s_client.rest.ApiException as e:

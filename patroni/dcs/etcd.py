@@ -472,8 +472,6 @@ class AbstractEtcd(AbstractDCS):
             raise raise_ex
 
     def _run_and_handle_exceptions(self, method, *args, **kwargs):
-        """:returns: a tuple, first value is a boolean, indicating success
-                     and the second is a value returned from a called function"""
         retry = kwargs.pop('retry', self.retry)
         try:
             return retry(method, *args, **kwargs) if retry else method(*args, **kwargs)

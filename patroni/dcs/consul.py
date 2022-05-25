@@ -538,10 +538,14 @@ class Consul(AbstractDCS):
     def _write_status(self, value):
         return self._client.kv.put(self.status_path, value)
 
-    def _run_and_handle_exceptions(self, method, *args, **kwargs):
+    @staticmethod
+    def _run_and_handle_exceptions(method, *args, **kwargs):
         retry = kwargs.pop('retry', None)
         try:
-            retry(method, *args, **kwargs) if retry else method(*args, **kwargs)
+            if retry:
+                retry(method, *args, **kwargs)
+            else:
+                method(*args, **kwargs)
             return True
         except (RetryFailedError, InvalidSession, HTTPException, HTTPError, socket.error, socket.timeout) as e:
             raise ConsulError(e)
