@@ -285,9 +285,9 @@ class Consul(AbstractDCS):
         except Exception:
             logger.exception('adjust_ttl')
 
-    def _do_refresh_session(self):
+    def _do_refresh_session(self, force=False):
         """:returns: `!True` if it had to create new session"""
-        if self._session and self._last_session_refresh + self._loop_wait - 0.5 > time.time():
+        if not force and self._session and self._last_session_refresh + self._loop_wait > time.time():
             return False
 
         if self._session:
@@ -555,7 +555,7 @@ class Consul(AbstractDCS):
     def _update_leader(self):
         retry = self._retry.copy()
 
-        if not self._run_and_handle_exceptions(self._do_refresh_session, retry=retry):
+        if not self._run_and_handle_exceptions(self._do_refresh_session, True, retry=retry):
             return False
 
         if self._session:

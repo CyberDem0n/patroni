@@ -218,7 +218,8 @@ class TestEtcd3(BaseTestEtcd3):
         self.etcd3.update_leader('123')
         self.etcd3._last_lease_refresh = 0
         self.etcd3.update_leader('124')
-        with patch('time.time', Mock(side_effect=[0, 100, 200, 300])):
+        with patch.object(PatroniEtcd3Client, 'lease_keepalive', Mock(return_value=True)),\
+                patch('time.time', Mock(side_effect=[0, 100, 200, 300])):
             self.assertRaises(Etcd3Error, self.etcd3.update_leader, '126')
         self.etcd3._last_lease_refresh = 0
         with patch.object(PatroniEtcd3Client, 'lease_keepalive', Mock(side_effect=Unknown)):
