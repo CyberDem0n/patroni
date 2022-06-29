@@ -156,6 +156,13 @@ class Ha(object):
         self.set_is_leader(ret)
         return ret
 
+    def _failsafe_config(self):
+        if self.is_failsafe_mode():
+            ret = {m.name: m.api_url for m in self.cluster.members}
+            if self.state_handler.name not in ret:
+                ret[self.state_handler.name] = self.patroni.api.connection_string
+            return ret
+
     def update_lock(self, write_leader_optime=False):
         last_lsn = slots = None
         if write_leader_optime:
@@ -165,7 +172,7 @@ class Ha(object):
             except Exception:
                 logger.exception('Exception when called state_handler.last_operation()')
         try:
-            ret = self.dcs.update_leader(last_lsn, slots)
+            ret = self.dcs.update_leader(last_lsn, slots, self._failsafe_config())
         except DCSError:
             raise
         except Exception:
@@ -464,6 +471,9 @@ class Ha(object):
 
     def is_synchronous_mode_strict(self):
         return self.check_mode('synchronous_mode_strict')
+
+    def is_failsafe_mode(self):
+        return self.check_mode('failsafe_mode')
 
     def process_sync_replication(self):
         """Process synchronous standby beahvior.

@@ -77,7 +77,7 @@ Feature: basic replication
     Then I receive a response returncode 0
     And postgres2 role is the primary after 24 seconds
     And Response on GET http://127.0.0.1:8010/history contains recovery after 10 seconds
-    When I issue a PATCH request to http://127.0.0.1:8010/config with {"synchronous_mode": null, "master_start_timeout": 0}
+    When I issue a PATCH request to http://127.0.0.1:8010/config with {"synchronous_mode": null, "master_start_timeout": 0, "failsafe_mode": true}
     Then I receive a response code 200
     When I add the table bar to postgres2
     Then table bar is present on postgres1 after 20 seconds
@@ -94,3 +94,10 @@ Feature: basic replication
     Then postgres0 role is the secondary after 20 seconds
     When I add the table buz to postgres1
     Then table buz is present on postgres0 after 20 seconds
+
+  Scenario: check failsafe key
+    Given I issue a GET request to http://127.0.0.1:8008/failsafe
+    Then I receive a response code 200
+    And I receive a response postgres0 http://127.0.0.1:8008/patroni
+    And I receive a response postgres1 http://127.0.0.1:8009/patroni
+    And I receive a response postgres2 http://127.0.0.1:8010/patroni

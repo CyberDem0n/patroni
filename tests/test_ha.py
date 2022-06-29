@@ -201,6 +201,7 @@ class TestHa(PostgresInit):
             self.ha.load_cluster_from_dcs = Mock()
 
     def test_update_lock(self):
+        self.ha.is_failsafe_mode = true
         self.p.last_operation = Mock(side_effect=PostgresConnectionException(''))
         self.ha.dcs.update_leader = Mock(side_effect=[DCSError(''), Exception])
         self.assertRaises(DCSError, self.ha.update_lock)
