@@ -827,6 +827,8 @@ class Ha(object):
         if self.is_failsafe_mode():
             try:
                 failsafe_members = self.cluster.failsafe or self.old_cluster.failsafe
+                if self.state_handler.name not in failsafe_members:
+                    return False  # This node is missing in the /failsafe key and is not eligible for a leader race
                 all_known_members += [RemoteMember(name, {'api_url': url}) for name, url in failsafe_members.items()]
             except Exception:
                 pass  # Protect from an unexpected garbage in the /failsafe key

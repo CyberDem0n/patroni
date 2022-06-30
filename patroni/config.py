@@ -68,7 +68,7 @@ class Config(object):
         'synchronous_mode': False,
         'synchronous_mode_strict': False,
         'synchronous_node_count': 1,
-        'failsafe_mode': True,
+        'failsafe_mode': False,
         'standby_cluster': {
             'create_replica_methods': '',
             'host': '',

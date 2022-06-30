@@ -667,10 +667,15 @@ class TestHa(PostgresInit):
         self.assertEqual(self.ha.run_cycle(), 'PAUSE: promoted self to leader by acquiring session lock')
 
     def test_is_healthiest_node(self):
+        self.ha.is_failsafe_mode = true
         self.ha.state_handler.is_leader = false
         self.ha.patroni.nofailover = False
         self.ha.fetch_node_status = get_node_status()
         self.assertTrue(self.ha.is_healthiest_node())
+        with patch.object(Cluster, 'failsafe', PropertyMock(return_value={})):
+            self.assertFalse(self.ha.is_healthiest_node())
+        with patch.object(Cluster, 'failsafe', PropertyMock(return_value={'postgresql0': ''})):
+            self.assertTrue(self.ha.is_healthiest_node())
         with patch.object(Watchdog, 'is_healthy', PropertyMock(return_value=False)):
             self.assertFalse(self.ha.is_healthiest_node())
         with patch('patroni.postgresql.Postgresql.is_starting', return_value=True):
