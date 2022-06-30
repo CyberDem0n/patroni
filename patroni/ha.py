@@ -823,8 +823,16 @@ class Ha(object):
             logger.warning('Watchdog device is not usable')
             return False
 
+        all_known_members = self.old_cluster.members
+        if self.is_failsafe_mode():
+            try:
+                failsafe_members = self.cluster.failsafe or self.old_cluster.failsafe
+                all_known_members += [RemoteMember(name, {'api_url': url}) for name, url in failsafe_members.items()]
+            except Exception:
+                pass  # Protect from an unexpected garbage in the /failsafe key
+        all_known_members += self.cluster.members
+
         # When in sync mode, only last known master and sync standby are allowed to promote automatically.
-        all_known_members = self.cluster.members + self.old_cluster.members
         if self.is_synchronous_mode() and self.cluster.sync and self.cluster.sync.leader:
             if not self.cluster.sync.matches(self.state_handler.name):
                 return False
