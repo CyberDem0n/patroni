@@ -1614,6 +1614,8 @@ class Ha(object):
     def _handle_dcs_error(self):
         if not self.is_paused() and self.state_handler.is_running():
             if self.state_handler.is_leader():
+                import pdb
+                pdb.set_trace()
                 if self.is_leader() and self.is_failsafe_mode() and self.check_failsafe_topology():
                     self.set_is_leader(True)
                     return 'continue to run as a leader because failsafe mode is enabled and all members are accessible'
