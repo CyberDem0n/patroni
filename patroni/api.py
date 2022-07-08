@@ -357,6 +357,14 @@ class RestApiHandler(BaseHTTPRequestHandler):
         else:
             self.send_error(502)
 
+    def do_POST_failsafe(self):
+        if self.server.patroni.ha.is_failsafe_mode():
+            request = self._read_json_content()
+            self.server.patroni.ha.failsafe.update(request)
+            self._write_response(200, 'Accepted')
+        else:
+            self.send_error(502)
+
     @staticmethod
     def parse_schedule(schedule, action):
         """ parses the given schedule and validates at """

@@ -734,8 +734,11 @@ class Etcd(AbstractEtcd):
 
     @catch_return_false_exception
     def _update_leader(self):
-        return self._run_and_handle_exceptions(self._client.write, self.leader_path, self._name,
-                                               prevValue=self._name, ttl=self._ttl) is not None
+        try:
+            return self._run_and_handle_exceptions(self._client.write, self.leader_path, self._name,
+                                                   prevValue=self._name, ttl=self._ttl) is not None
+        except etcd.EtcdKeyNotFound:
+            return self.attempt_to_acquire_leader()
 
     @catch_etcd_errors
     def initialize(self, create_new=True, sysid=""):

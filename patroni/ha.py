@@ -18,7 +18,7 @@ from .postgresql import ACTION_ON_START, ACTION_ON_ROLE_CHANGE
 from .postgresql.misc import postgres_version_to_int
 from .postgresql.rewind import Rewind
 from .utils import polling_loop, tzutc, is_standby_cluster as _is_standby_cluster, parse_int
-from .dcs import RemoteMember
+from .dcs import Cluster, Leader, RemoteMember
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +61,47 @@ class _MemberStatus(namedtuple('_MemberStatus', ['member', 'reachable', 'in_reco
         return None
 
 
+class Failsafe(object):
+
+    def __init__(self, ha):
+        self._lock = RLock()
+        self._ha = ha
+        self._last_update = 0
+        self._name = None
+        self._conn_url = None
+        self._api_url = None
+        self._slots = None
+
+    def update(self, data):
+        with self._lock:
+            self._last_update = time.time()
+            self._name = data['name']
+            self._conn_url = data['conn_url']
+            self._api_url = data['api_url']
+            self._slots = data.get('slots')
+
+    @property
+    def leader(self):
+        with self._lock:
+            if self._last_update + self._ha.dcs.ttl > time.time():
+                return Leader(None, None,
+                              RemoteMember(self._name, {'api_url': self._api_url,
+                                                        'conn_url': self._conn_url,
+                                                        'slots': self._slots}))
+
+    def update_cluster(self, cluster):
+        # Enreach cluster with the real leader if there was a ping from it
+        leader = self.leader
+        if leader:
+            cluster = list(cluster)
+            # We rely on the strict order of fields in the namedtuple
+            cluster[2] = leader
+            cluster[4].append(leader.member)
+            cluster[8] = leader.member.data['slots']
+            cluster = Cluster(*cluster)
+        return cluster
+
+
 class Ha(object):
 
     def __init__(self, patroni):
@@ -72,6 +113,7 @@ class Ha(object):
         self.old_cluster = None
         self._is_leader = False
         self._is_leader_lock = RLock()
+        self.failsafe = Failsafe(self)
         self._was_paused = False
         self._leader_timeline = None
         self.recovering = False
@@ -139,6 +181,10 @@ class Ha(object):
         if not cluster.is_unlocked() or not self.old_cluster:
             self.old_cluster = cluster
         self.cluster = cluster
+
+        if self.cluster.is_unlocked() and self.is_failsafe_mode():
+            # If failsafe mode is enabled we want to inject the "real" leader to the cluster
+            self.cluster = cluster = self.failsafe.update_cluster(cluster)
 
         if not self.has_lock(False):
             self.set_is_leader(False)
@@ -673,6 +719,38 @@ class Ha(object):
         pool.join()
         return results
 
+    def call_failsafe_member(self, data, member):
+        try:
+            response = self.patroni.request(member, 'post', 'failsafe', data, timeout=2, retries=0)
+            data = response.data.decode('utf-8')
+            logger.info('Got response from %s %s: %s', member.name, member.api_url, data)
+            return data == 'Accepted'
+        except Exception as e:
+            logger.warning("Request failed to %s: POST %s (%s)", member.name, member.api_url, e)
+        return False
+
+    def check_failsafe_topology(self):
+        if not self.cluster.failsafe or self.state_handler.name not in self.cluster.failsafe:
+            return False
+        data = {
+            'name': self.state_handler.name,
+            'conn_url': self.state_handler.connection_string,
+            'api_url': self.patroni.api.connection_string,
+        }
+        try:
+            data['slots'] = self.state_handler.slots()
+        except Exception:
+            logger.exception('Exception when called state_handler.slots()')
+        members = [RemoteMember(name, {'api_url': url})
+                   for name, url in self.cluster.failsafe.items()
+                   if name != self.state_handler.name]
+        pool = ThreadPool(len(members))
+        call_failsafe_member = functools.partial(self.call_failsafe_member, data)
+        results = pool.map(call_failsafe_member, members)
+        pool.close()
+        pool.join()
+        return all(results)
+
     def is_lagging(self, wal_position):
         """Returns if instance with an wal should consider itself unhealthy to be promoted due to replication lag.
 
@@ -827,7 +905,7 @@ class Ha(object):
         if self.is_failsafe_mode():
             try:
                 failsafe_members = self.cluster.failsafe or self.old_cluster.failsafe
-                if self.state_handler.name not in failsafe_members:
+                if not failsafe_members or self.state_handler.name not in failsafe_members:
                     return False  # This node is missing in the /failsafe key and is not eligible for a leader race
                 all_known_members += [RemoteMember(name, {'api_url': url}) for name, url in failsafe_members.items()]
             except Exception:
@@ -1526,19 +1604,31 @@ class Ha(object):
         except DCSError:
             dcs_failed = True
             logger.error('Error communicating with DCS')
-            if not self.is_paused() and self.state_handler.is_running() and self.state_handler.is_leader():
+            return self._handle_dcs_error()
+        except (psycopg.Error, PostgresConnectionException):
+            return 'Error communicating with PostgreSQL. Will try again later'
+        finally:
+            if not dcs_failed:
+                self.touch_member()
+
+    def _handle_dcs_error(self):
+        if not self.is_paused() and self.state_handler.is_running():
+            if self.state_handler.is_leader():
+                if self.is_leader() and self.is_failsafe_mode() and self.check_failsafe_topology():
+                    self.set_is_leader(True)
+                    return 'continue to run as a leader because failsafe mode is enabled and all members are accessible'
                 msg = 'demoting self because DCS is not accessible and I was a leader'
                 if not self._async_executor.try_run_async(msg, self.demote, ('offline',)):
                     return msg
                 logger.warning('AsyncExecutor is busy, demoting from the main thread')
                 self.demote('offline')
                 return 'demoted self because DCS is not accessible and I was a leader'
-            return 'DCS is not accessible'
-        except (psycopg.Error, PostgresConnectionException):
-            return 'Error communicating with PostgreSQL. Will try again later'
-        finally:
-            if not dcs_failed:
-                self.touch_member()
+            elif self.is_failsafe_mode():
+                cluster = self.failsafe.update_cluster(self.cluster)
+                if cluster:
+                    self.state_handler.slots_handler.sync_replication_slots(cluster, self.patroni.nofailover)
+
+        return 'DCS is not accessible'
 
     def run_cycle(self):
         with self._async_executor:
