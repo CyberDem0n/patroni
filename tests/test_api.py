@@ -55,6 +55,7 @@ class MockHa(object):
 
     state_handler = MockPostgresql()
     watchdog = MockWatchdog()
+    failsafe = {}
 
     @staticmethod
     def is_leader():
@@ -362,6 +363,13 @@ class TestRestApiHandler(unittest.TestCase):
         type(mock_ha).cluster = PropertyMock(return_value=None)
         type(mock_ha).old_cluster = PropertyMock(return_value=None)
         self.assertIsNotNone(MockRestApiServer(RestApiHandler, 'GET /failsafe'))
+
+    def test_do_POST_failsafe(self):
+        with patch.object(MockHa, 'is_failsafe_mode', Mock(return_value=False), create=True):
+            self.assertIsNotNone(MockRestApiServer(RestApiHandler, 'POST /failsafe HTTP/1.0' + self._authorization))
+        with patch.object(MockHa, 'is_failsafe_mode', Mock(return_value=True), create=True):
+            self.assertIsNotNone(MockRestApiServer(RestApiHandler, 'POST /failsafe HTTP/1.0' + self._authorization +
+                                                                   '\nContent-Length: 9\n\n{"a":"b"}'))
 
     @patch.object(MockPatroni, 'sighup_handler', Mock())
     def test_do_POST_reload(self):

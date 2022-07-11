@@ -357,6 +357,7 @@ class RestApiHandler(BaseHTTPRequestHandler):
         else:
             self.send_error(502)
 
+    @check_access
     def do_POST_failsafe(self):
         if self.server.patroni.ha.is_failsafe_mode():
             request = self._read_json_content()

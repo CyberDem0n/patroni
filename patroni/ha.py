@@ -730,7 +730,7 @@ class Ha(object):
         return False
 
     def check_failsafe_topology(self):
-        if not self.cluster.failsafe or self.state_handler.name not in self.cluster.failsafe:
+        if not isinstance(self.cluster.failsafe, dict) or self.state_handler.name not in self.cluster.failsafe:
             return False
         data = {
             'name': self.state_handler.name,
@@ -744,6 +744,8 @@ class Ha(object):
         members = [RemoteMember(name, {'api_url': url})
                    for name, url in self.cluster.failsafe.items()
                    if name != self.state_handler.name]
+        if not members:  # A sinlge node cluster
+            return True
         pool = ThreadPool(len(members))
         call_failsafe_member = functools.partial(self.call_failsafe_member, data)
         results = pool.map(call_failsafe_member, members)
@@ -903,13 +905,10 @@ class Ha(object):
 
         all_known_members = self.old_cluster.members
         if self.is_failsafe_mode():
-            try:
-                failsafe_members = self.cluster.failsafe or self.old_cluster.failsafe
-                if not failsafe_members or self.state_handler.name not in failsafe_members:
-                    return False  # This node is missing in the /failsafe key and is not eligible for a leader race
-                all_known_members += [RemoteMember(name, {'api_url': url}) for name, url in failsafe_members.items()]
-            except Exception:
-                pass  # Protect from an unexpected garbage in the /failsafe key
+            failsafe_members = self.cluster.failsafe or self.old_cluster.failsafe
+            if not isinstance(failsafe_members, dict) or self.state_handler.name not in failsafe_members:
+                return False  # This node is missing in the /failsafe key and is not eligible for a leader race
+            all_known_members += [RemoteMember(name, {'api_url': url}) for name, url in failsafe_members.items()]
         all_known_members += self.cluster.members
 
         # When in sync mode, only last known master and sync standby are allowed to promote automatically.
@@ -1614,10 +1613,9 @@ class Ha(object):
     def _handle_dcs_error(self):
         if not self.is_paused() and self.state_handler.is_running():
             if self.state_handler.is_leader():
-                import pdb
-                pdb.set_trace()
                 if self.is_leader() and self.is_failsafe_mode() and self.check_failsafe_topology():
                     self.set_is_leader(True)
+                    self.watchdog.keepalive()
                     return 'continue to run as a leader because failsafe mode is enabled and all members are accessible'
                 msg = 'demoting self because DCS is not accessible and I was a leader'
                 if not self._async_executor.try_run_async(msg, self.demote, ('offline',)):

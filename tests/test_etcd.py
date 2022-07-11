@@ -40,7 +40,7 @@ def etcd_read(self, key, **kwargs):
         raise etcd.EtcdKeyNotFound
 
     response = {"action": "get", "node": {"key": "/service/batman5", "dir": True, "nodes": [
-                {"key": "/service/batman5/config", "value": '{"synchronous_mode": 0}',
+                {"key": "/service/batman5/config", "value": '{"synchronous_mode": 0, "failsafe_mode": true}',
                  "modifiedIndex": 1582, "createdIndex": 1582},
                 {"key": "/service/batman5/failover", "value": "",
                  "modifiedIndex": 1582, "createdIndex": 1582},
@@ -293,6 +293,8 @@ class TestEtcd(unittest.TestCase):
             self.assertRaises(EtcdError, self.etcd.update_leader, None)
             self.assertFalse(self.etcd.update_leader(None))
             self.assertRaises(EtcdError, self.etcd.update_leader, None)
+        with patch.object(etcd.Client, 'write', Mock(side_effect=etcd.EtcdKeyNotFound)):
+            self.assertFalse(self.etcd.update_leader(None))
 
     def test_initialize(self):
         self.assertFalse(self.etcd.initialize())

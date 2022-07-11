@@ -695,7 +695,7 @@ class Etcd(AbstractEtcd):
     def take_leader(self):
         return self.retry(self._client.write, self.leader_path, self._name, ttl=self._ttl)
 
-    def attempt_to_acquire_leader(self, permanent=False):
+    def _do_attempt_to_acquire_leader(self, permanent=False):
         try:
             return bool(self.retry(self._client.write,
                                    self.leader_path,
@@ -704,13 +704,11 @@ class Etcd(AbstractEtcd):
                                    prevExist=False))
         except etcd.EtcdAlreadyExist:
             logger.info('Could not take out TTL lock')
-        except (RetryFailedError, etcd.EtcdConnectionFailed) as e:
-            raise EtcdError(e)
-        except etcd.EtcdException as e:
-            self._handle_exception(e)
-        except Exception as e:
-            self._handle_exception(e, raise_ex=EtcdError('unexpected error'))
-        return False
+            return False
+
+    @catch_return_false_exception
+    def attempt_to_acquire_leader(self, permanent=False):
+        return self._run_and_handle_exceptions(self._do_attempt_to_acquire_leader, permanent=permanent, retry=None)
 
     @catch_etcd_errors
     def set_failover_value(self, value, index=None):
@@ -732,13 +730,16 @@ class Etcd(AbstractEtcd):
     def _write_failsafe(self, value):
         return self._client.set(self.failsafe_path, value)
 
+    def _do_update_leader(self):
+        try:
+            return self.retry(self._client.write, self.leader_path, self._name,
+                              prevValue=self._name, ttl=self._ttl) is not None
+        except etcd.EtcdKeyNotFound:
+            return self._do_attempt_to_acquire_leader()
+
     @catch_return_false_exception
     def _update_leader(self):
-        try:
-            return self._run_and_handle_exceptions(self._client.write, self.leader_path, self._name,
-                                                   prevValue=self._name, ttl=self._ttl) is not None
-        except etcd.EtcdKeyNotFound:
-            return self.attempt_to_acquire_leader()
+        return self._run_and_handle_exceptions(self._do_update_leader, retry=None)
 
     @catch_etcd_errors
     def initialize(self, create_new=True, sysid=""):
