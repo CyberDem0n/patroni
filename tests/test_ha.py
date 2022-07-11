@@ -709,7 +709,7 @@ class TestHa(PostgresInit):
         self.ha.state_handler.is_leader = false
         self.ha.patroni.nofailover = False
         self.ha.fetch_node_status = get_node_status()
-        with patch.object(Cluster, 'failsafe', PropertyMock(return_value={})):
+        with patch.object(Cluster, 'failsafe', PropertyMock(return_value={'foo': ''})):
             self.assertFalse(self.ha.is_healthiest_node())
         with patch.object(Cluster, 'failsafe', PropertyMock(return_value={'postgresql0': ''})):
             self.assertTrue(self.ha.is_healthiest_node())

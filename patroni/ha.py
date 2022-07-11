@@ -906,9 +906,13 @@ class Ha(object):
         all_known_members = self.old_cluster.members
         if self.is_failsafe_mode():
             failsafe_members = self.cluster.failsafe or self.old_cluster.failsafe
-            if not isinstance(failsafe_members, dict) or self.state_handler.name not in failsafe_members:
-                return False  # This node is missing in the /failsafe key and is not eligible for a leader race
-            all_known_members += [RemoteMember(name, {'api_url': url}) for name, url in failsafe_members.items()]
+            # We want to discard failsafe_mode if the /failsafe key contains garbage or empty.
+            if isinstance(failsafe_members, dict):
+                # If current node is missing in the /failsafe key we immediately disqualify it from the race.
+                if failsafe_members and self.state_handler.name not in failsafe_members:
+                    return False
+                # Race among not only existing cluster members, but also all known members from the failsafe config
+                all_known_members += [RemoteMember(name, {'api_url': url}) for name, url in failsafe_members.items()]
         all_known_members += self.cluster.members
 
         # When in sync mode, only last known master and sync standby are allowed to promote automatically.
