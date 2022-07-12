@@ -821,7 +821,8 @@ class Kubernetes(AbstractDCS):
             except (TypeError, ValueError):
                 ttl = self._ttl
 
-            if not metadata or not self._leader_observed_time or self._leader_observed_time + ttl < time.time():
+            if not metadata or not self._leader_observed_time or self._leader_observed_time + ttl < time.time() \
+                    and (self._name != leader or not isinstance(failsafe, dict) or leader not in failsafe):
                 leader = None
 
             if metadata:
@@ -1068,7 +1069,8 @@ class Kubernetes(AbstractDCS):
         ips = [] if self._api.use_endpoints else None
 
         try:
-            ret = self._patch_or_create(self.leader_path, annotations, self._leader_resource_version, ips=ips)
+            ret = self._patch_or_create(self.leader_path, annotations,
+                                        self._leader_resource_version, retry=self.retry, ips=ips)
         except k8s_client.rest.ApiException as e:
             if e.status == 409 and self._leader_resource_version:  # Conflict in resource_version
                 # Terminate watchers, it could be a sign that K8s API is in a failed state
