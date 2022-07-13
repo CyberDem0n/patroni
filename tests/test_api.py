@@ -55,7 +55,10 @@ class MockHa(object):
 
     state_handler = MockPostgresql()
     watchdog = MockWatchdog()
-    failsafe = {}
+
+    @staticmethod
+    def update_failsafe(*args):
+        return 'foo'
 
     @staticmethod
     def is_leader():

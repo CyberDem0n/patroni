@@ -719,12 +719,17 @@ class Ha(object):
         pool.join()
         return results
 
+    def update_failsafe(self, data):
+        if self.state_handler.state == 'running' and self.state_handler.role == 'master':
+            return 'Running as a leader'
+        self.failsafe.update(data)
+
     def call_failsafe_member(self, data, member):
         try:
             response = self.patroni.request(member, 'post', 'failsafe', data, timeout=2, retries=0)
             data = response.data.decode('utf-8')
             logger.info('Got response from %s %s: %s', member.name, member.api_url, data)
-            return data == 'Accepted'
+            return response.status == 200 and data == 'Accepted'
         except Exception as e:
             logger.warning("Request failed to %s: POST %s (%s)", member.name, member.api_url, e)
         return False
@@ -1617,7 +1622,7 @@ class Ha(object):
     def _handle_dcs_error(self):
         if not self.is_paused() and self.state_handler.is_running():
             if self.state_handler.is_leader():
-                if self.is_leader() and self.is_failsafe_mode() and self.check_failsafe_topology():
+                if self.is_failsafe_mode() and self.check_failsafe_topology():
                     self.set_is_leader(True)
                     self.watchdog.keepalive()
                     return 'continue to run as a leader because failsafe mode is enabled and all members are accessible'

@@ -467,7 +467,6 @@ class TestHa(PostgresInit):
 
     def test_check_failsafe_topology(self):
         self.ha.load_cluster_from_dcs = Mock(side_effect=DCSError('Etcd is not responding properly'))
-        self.ha.is_leader = true
         self.ha.cluster = get_cluster_initialized_with_leader_and_failsafe()
         self.assertEqual(self.ha.run_cycle(), 'demoting self because DCS is not accessible and I was a leader')
         self.ha.state_handler.name = self.ha.cluster.leader.name
@@ -483,7 +482,6 @@ class TestHa(PostgresInit):
 
     def test_no_dcs_connection_primary_failsafe(self):
         self.ha.load_cluster_from_dcs = Mock(side_effect=DCSError('Etcd is not responding properly'))
-        self.ha.is_leader = true
         self.ha.cluster = get_cluster_initialized_with_leader_and_failsafe()
         self.ha.state_handler.name = self.ha.cluster.leader.name
         self.assertEqual(self.ha.run_cycle(),
@@ -496,6 +494,11 @@ class TestHa(PostgresInit):
                                  'conn_url': 'postgres://127.0.0.1:5432/postgres', 'slots': {'foo': 1000}})
         self.p.is_leader = false
         self.assertEqual(self.ha.run_cycle(), 'DCS is not accessible')
+
+    def test_update_failsafe(self):
+        self.assertRaises(Exception, self.ha.update_failsafe, {})
+        self.p.set_role('master')
+        self.assertEqual(self.ha.update_failsafe({}), 'Running as a leader')
 
     @patch('time.sleep', Mock())
     def test_bootstrap_from_another_member(self):

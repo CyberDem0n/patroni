@@ -361,8 +361,9 @@ class RestApiHandler(BaseHTTPRequestHandler):
     def do_POST_failsafe(self):
         if self.server.patroni.ha.is_failsafe_mode():
             request = self._read_json_content()
-            self.server.patroni.ha.failsafe.update(request)
-            self._write_response(200, 'Accepted')
+            message = self.server.patroni.ha.update_failsafe(request) or 'Accepted'
+            code = 200 if message == 'Accepted' else 500
+            self._write_response(code, message)
         else:
             self.send_error(502)
 
