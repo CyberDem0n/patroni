@@ -34,15 +34,15 @@ Low-level implementation details
 - The member is allowed to participate in the leader race and become the new leader only if it is present in the ``/failsafe`` key.
 - If the cluster consists of a single node the ``/failsafe`` key will contain a single member.
 - In the case of DCS "outage" the existing primary connects to all members presented in the ``/failsafe`` key via the REST API and may continue to run as the primary if all of them acknowledge it.
-- If one of the members doesn't respond the primary is demoted.
+- If one of the members doesn't respond, the primary is demoted.
 
 
 F.A.Q.
 ------
 
-- Why the current primary MUST see ALL other members? Can’t we rely on quorum here?
+- Why MUST the current primary see ALL other members? Can’t we rely on quorum here?
 
-  This is a great question! The problem is that the view on the quorum might be different from the perspective of DCS and Patroni. While DCS nodes must be evenly distributed across availability zones, there is no such rule for Patroni and more importantly, there is no mechanism for introducing and enforcing such a rule. If the majority of Patroni nodes will end up in the losing part of the partitioned network (including primary) while minority nodes are in the winning part, the primary must be demoted. Only checking ALL other members allows detecting such a situation.
+  This is a great question! The problem is that the view on the quorum might be different from the perspective of DCS and Patroni. While DCS nodes must be evenly distributed across availability zones, there is no such rule for Patroni, and more importantly, there is no mechanism for introducing and enforcing such a rule. If the majority of Patroni nodes ends up in the losing part of the partitioned network (including primary) while minority nodes are in the winning part, the primary must be demoted. Only checking ALL other members allows detecting such a situation.
 
 - What if node/pod gets terminated while DCS is down?
 
@@ -50,7 +50,7 @@ F.A.Q.
 
 - What if all members of the Patroni cluster are lost while DCS is down?
 
-  Patroni could be configured to create the new replica from the backup even when the cluster doesn't have a leader. But, if the new member isn't present in the ``/failsafe`` key it will not be able to grab the leader lock and promote.
+  Patroni could be configured to create the new replica from the backup even when the cluster doesn't have a leader. But, if the new member isn't present in the ``/failsafe`` key, it will not be able to grab the leader lock and promote.
 
 - How to enable the Failsafe Mode?
 
