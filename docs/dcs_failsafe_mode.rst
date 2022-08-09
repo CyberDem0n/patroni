@@ -34,8 +34,9 @@ Low-level implementation details
 - The current leader maintains the ``/failsafe`` key.
 - The member is allowed to participate in the leader race and become the new leader only if it is present in the ``/failsafe`` key.
 - If the cluster consists of a single node the ``/failsafe`` key will contain a single member.
-- In the case of DCS "outage" the existing primary connects to all members presented in the ``/failsafe`` key via the REST API and may continue to run as the primary if all of them acknowledge it.
+- In the case of DCS "outage" the existing primary connects to all members presented in the ``/failsafe`` key via the ``POST /failsafe`` REST API and may continue to run as the primary if all replicas acknowledge it.
 - If one of the members doesn't respond, the primary is demoted.
+- Replicas are using incoming ``POST /failsafe`` REST API requests as an indicator that the primary is still alive. This information is cached for ``ttl`` seconds.
 
 
 F.A.Q.
@@ -52,6 +53,10 @@ F.A.Q.
 - What if all members of the Patroni cluster are lost while DCS is down?
 
   Patroni could be configured to create the new replica from the backup even when the cluster doesn't have a leader. But, if the new member isn't present in the ``/failsafe`` key, it will not be able to grab the leader lock and promote.
+  
+- What will happen if the primary lost access to DCS while replicas didn't?
+
+  The primary will execute the failsafe code and contact all known replicas. These replicas will use this information as an indicator that the primary is alive and will not start the leader race even if the leader lock in DCS has expired.
 
 - How to enable the Failsafe Mode?
 
