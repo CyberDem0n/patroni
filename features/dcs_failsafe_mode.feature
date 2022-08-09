@@ -19,7 +19,8 @@ Feature: dcs failsafe mode
   @dcs-failsafe
   Scenario: check one-node cluster is functioning while DCS is down
     Given DCS is down
-    Then postgres0 role is the primary after 20 seconds
+    When I sleep for 12 seconds
+    Then postgres0 role is the primary after 10 seconds
 
   @dcs-failsafe
   Scenario: check new replica isn't promoted when leader is down and DCS is up
@@ -47,7 +48,7 @@ Feature: dcs failsafe mode
     Given logical slot dcs_slot_0 is in sync between postgres0 and postgres1 after 10 seconds
     And DCS is down
     And I sleep for 12 seconds
-    Then postgres0 role is the primary after 2 seconds
+    Then postgres0 role is the primary after 10 seconds
     And postgres1 role is the replica after 2 seconds
     And replication works from postgres0 to postgres1 after 10 seconds
     And I get all changes from logical slot dcs_slot_0 on postgres0
@@ -60,7 +61,7 @@ Feature: dcs failsafe mode
     Then "members/postgres2" key in DCS has state=running after 10 seconds
     Given DCS is down
     And I sleep for 12 seconds
-    Then postgres0 role is the primary after 2 seconds
+    Then postgres0 role is the primary after 10 seconds
     And postgres1 role is the replica after 2 seconds
     And postgres2 role is the replica after 2 seconds
 
@@ -70,3 +71,9 @@ Feature: dcs failsafe mode
     And I sleep for 2 seconds
     Then postgres0 role is the replica after 12 seconds
     And postgres2 role is the replica after 2 seconds
+
+  @dcs-failsafe
+  Scenario: check known replica is promoted when leader is down and DCS is up
+    Given I shut down postgres0
+    And DCS is up
+    Then postgres2 role is the primary after 10 seconds
