@@ -19,7 +19,8 @@ from six.moves.http_client import HTTPException
 from six.moves.urllib_parse import urlparse
 from threading import Thread
 
-from . import AbstractDCS, Cluster, ClusterConfig, Failover, Leader, Member, SyncState, TimelineHistory
+from . import AbstractDCS, Cluster, ClusterConfig, Failover, Leader, Member,\
+        SyncState, TimelineHistory, ReturnFalseException, catch_return_false_exception
 from ..exceptions import DCSError
 from ..request import get as requests_get
 from ..utils import Retry, RetryFailedError, split_host_port, uri, USER_AGENT
@@ -457,6 +458,18 @@ class AbstractEtcd(AbstractDCS):
         if isinstance(raise_ex, Exception):
             raise raise_ex
 
+    def _run_and_handle_exceptions(self, method, *args, **kwargs):
+        retry = kwargs.pop('retry', self.retry)
+        try:
+            return retry(method, *args, **kwargs) if retry else method(*args, **kwargs)
+        except (RetryFailedError, etcd.EtcdConnectionFailed) as e:
+            raise self._client.ERROR_CLS(e)
+        except etcd.EtcdException as e:
+            self._handle_exception(e)
+            raise ReturnFalseException
+        except Exception as e:
+            self._handle_exception(e, raise_ex=self._client.ERROR_CLS('unexpected error'))
+
     @staticmethod
     def set_socket_options(sock, socket_options):
         if socket_options:
@@ -645,9 +658,16 @@ class Etcd(AbstractEtcd):
             sync = nodes.get(self._SYNC)
             sync = SyncState.from_node(sync and sync.modifiedIndex, sync and sync.value)
 
-            cluster = Cluster(initialize, config, leader, last_lsn, members, failover, sync, history, slots)
+            # get failsafe topology
+            failsafe = nodes.get(self._FAILSAFE)
+            try:
+                failsafe = json.loads(failsafe.value) if failsafe else None
+            except Exception:
+                failsafe = None
+
+            cluster = Cluster(initialize, config, leader, last_lsn, members, failover, sync, history, slots, failsafe)
         except etcd.EtcdKeyNotFound:
-            cluster = Cluster(None, None, None, None, [], None, None, None, None)
+            cluster = Cluster(None, None, None, None, [], None, None, None, None, None)
         except Exception as e:
             self._handle_exception(e, 'get_cluster', raise_ex=EtcdError('Etcd is not responding properly'))
         self._has_failed = False
@@ -662,7 +682,7 @@ class Etcd(AbstractEtcd):
     def take_leader(self):
         return self.retry(self._client.write, self.leader_path, self._name, ttl=self._ttl)
 
-    def attempt_to_acquire_leader(self, permanent=False):
+    def _do_attempt_to_acquire_leader(self, permanent=False):
         try:
             return bool(self.retry(self._client.write,
                                    self.leader_path,
@@ -671,9 +691,11 @@ class Etcd(AbstractEtcd):
                                    prevExist=False))
         except etcd.EtcdAlreadyExist:
             logger.info('Could not take out TTL lock')
-        except (RetryFailedError, etcd.EtcdException):
-            pass
-        return False
+            return False
+
+    @catch_return_false_exception
+    def attempt_to_acquire_leader(self, permanent=False):
+        return self._run_and_handle_exceptions(self._do_attempt_to_acquire_leader, permanent=permanent, retry=None)
 
     @catch_etcd_errors
     def set_failover_value(self, value, index=None):
@@ -691,9 +713,20 @@ class Etcd(AbstractEtcd):
     def _write_status(self, value):
         return self._client.set(self.status_path, value)
 
+    def _do_update_leader(self):
+        try:
+            return self.retry(self._client.write, self.leader_path, self._name,
+                              prevValue=self._name, ttl=self._ttl) is not None
+        except etcd.EtcdKeyNotFound:
+            return self._do_attempt_to_acquire_leader()
+
     @catch_etcd_errors
+    def _write_failsafe(self, value):
+        return self._client.set(self.failsafe_path, value)
+
+    @catch_return_false_exception
     def _update_leader(self):
-        return self.retry(self._client.write, self.leader_path, self._name, prevValue=self._name, ttl=self._ttl)
+        return self._run_and_handle_exceptions(self._do_update_leader, retry=None)
 
     @catch_etcd_errors
     def initialize(self, create_new=True, sysid=""):
