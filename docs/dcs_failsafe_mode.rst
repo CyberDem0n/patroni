@@ -13,6 +13,7 @@ Reasons for the current implementation
 ---------------------------------------
 
 The leader lock update failure could be caused by two main reasons:
+
 1. Network partitioning
 2. DCS being down
 
@@ -22,7 +23,7 @@ In general, it is impossible to distinguish between these two from a single node
 DCS Failsafe Mode
 -----------------
 
-We introduce a new special option, the ``failsafe_mode``. It could be enabled only via global configuration stored in the DCS ``/config`` key. If the failsafe mode is enabled and the leader lock update in DCS failed due to reasons different from the version/value/index mismatch, Postgres may continue to run as a primary if all known members of the cluster are accessible via Patroni REST API.
+We introduce a new special option, the ``failsafe_mode``. It could be enabled only via global configuration stored in the DCS ``/config`` key. If the failsafe mode is enabled and the leader lock update in DCS failed due to reasons different from the version/value/index mismatch, Postgres may continue to run as a primary if it can access all known members of the cluster via Patroni REST API.
 
 
 Low-level implementation details
@@ -33,16 +34,17 @@ Low-level implementation details
 - The current leader maintains the ``/failsafe`` key.
 - The member is allowed to participate in the leader race and become the new leader only if it is present in the ``/failsafe`` key.
 - If the cluster consists of a single node the ``/failsafe`` key will contain a single member.
-- In the case of DCS "outage" the existing primary connects to all members presented in the ``/failsafe`` key via the REST API and may continue to run as the primary if all of them acknowledge it.
-- If one of the members doesn't respond the primary is demoted.
+- In the case of DCS "outage" the existing primary connects to all members presented in the ``/failsafe`` key via the ``POST /failsafe`` REST API and may continue to run as the primary if all replicas acknowledge it.
+- If one of the members doesn't respond, the primary is demoted.
+- Replicas are using incoming ``POST /failsafe`` REST API requests as an indicator that the primary is still alive. This information is cached for ``ttl`` seconds.
 
 
 F.A.Q.
 ------
 
-- Why the current primary MUST see ALL other members? Can’t we rely on quorum here?
+- Why MUST the current primary see ALL other members? Can’t we rely on quorum here?
 
-  This is a great question! The problem is that the view on the quorum might be different from the perspective of DCS and Patroni. While DCS nodes must be evenly distributed across availability zones, there is no such rule for Patroni and more importantly, there is no mechanism for introducing and enforcing such a rule. If the majority of Patroni nodes will end up in the losing part of the partitioned network (including primary) while minority nodes are in the winning part, the primary must be demoted. Only checking ALL other members allows detecting such a situation.
+  This is a great question! The problem is that the view on the quorum might be different from the perspective of DCS and Patroni. While DCS nodes must be evenly distributed across availability zones, there is no such rule for Patroni, and more importantly, there is no mechanism for introducing and enforcing such a rule. If the majority of Patroni nodes ends up in the losing part of the partitioned network (including primary) while minority nodes are in the winning part, the primary must be demoted. Only checking ALL other members allows detecting such a situation.
 
 - What if node/pod gets terminated while DCS is down?
 
@@ -50,7 +52,11 @@ F.A.Q.
 
 - What if all members of the Patroni cluster are lost while DCS is down?
 
-  Patroni could be configured to create the new replica from the backup even when the cluster doesn't have a leader. But, if the new member isn't present in the ``/failsafe`` key it will not be able to grab the leader lock and promote.
+  Patroni could be configured to create the new replica from the backup even when the cluster doesn't have a leader. But, if the new member isn't present in the ``/failsafe`` key, it will not be able to grab the leader lock and promote.
+  
+- What will happen if the primary lost access to DCS while replicas didn't?
+
+  The primary will execute the failsafe code and contact all known replicas. These replicas will use this information as an indicator that the primary is alive and will not start the leader race even if the leader lock in DCS has expired.
 
 - How to enable the Failsafe Mode?
 
