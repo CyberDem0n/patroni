@@ -56,7 +56,8 @@ Feature: dcs failsafe mode
 
   @dcs-failsafe
   Scenario: check master is demoted when one replica is shut down and DCS is down
-    Given I shut down postgres1
+    Given DCS is down
+    And I shut down postgres1
     And I sleep for 2 seconds
     Then postgres0 role is the replica after 12 seconds
 
@@ -65,7 +66,8 @@ Feature: dcs failsafe mode
     Given DCS is up
     Then postgres0 role is the primary after 22 seconds
     When I start postgres1
-    Then "members/postgres1" key in DCS has state=running after 2 seconds
+    Then "members/postgres1" key in DCS has state=running after 10 seconds
+    And Response on GET http://127.0.0.1:8009/failsafe contains postgres1 after 10 seconds
     Given DCS is down
     And I shut down postgres0
     And DCS is up
