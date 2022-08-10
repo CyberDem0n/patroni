@@ -735,7 +735,8 @@ class Ha(object):
         return False
 
     def check_failsafe_topology(self):
-        if not isinstance(self.cluster.failsafe, dict) or self.state_handler.name not in self.cluster.failsafe:
+        failsafe = self.dcs.failsafe
+        if not isinstance(failsafe, dict) or self.state_handler.name not in failsafe:
             return False
         data = {
             'name': self.state_handler.name,
@@ -747,7 +748,7 @@ class Ha(object):
         except Exception:
             logger.exception('Exception when called state_handler.slots()')
         members = [RemoteMember(name, {'api_url': url})
-                   for name, url in self.cluster.failsafe.items()
+                   for name, url in failsafe.items()
                    if name != self.state_handler.name]
         if not members:  # A sinlge node cluster
             return True
@@ -910,7 +911,7 @@ class Ha(object):
 
         all_known_members = self.old_cluster.members
         if self.is_failsafe_mode():
-            failsafe_members = self.cluster.failsafe or self.old_cluster.failsafe
+            failsafe_members = self.dcs.failsafe
             # We want to discard failsafe_mode if the /failsafe key contains garbage or empty.
             if isinstance(failsafe_members, dict):
                 # If current node is missing in the /failsafe key we immediately disqualify it from the race.

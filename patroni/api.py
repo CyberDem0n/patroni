@@ -356,9 +356,9 @@ class RestApiHandler(BaseHTTPRequestHandler):
         self._write_response(202, 'reload scheduled')
 
     def do_GET_failsafe(self):
-        cluster = self.server.patroni.ha.cluster or self.server.patroni.ha.old_cluster
-        if cluster:
-            self._write_json_response(200, cluster.failsafe)
+        failsafe = self.server.patroni.dcs.failsafe
+        if isinstance(failsafe, dict):
+            self._write_json_response(200, failsafe)
         else:
             self.send_error(502)
 

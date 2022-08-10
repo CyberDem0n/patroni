@@ -468,6 +468,7 @@ class TestHa(PostgresInit):
     def test_check_failsafe_topology(self):
         self.ha.load_cluster_from_dcs = Mock(side_effect=DCSError('Etcd is not responding properly'))
         self.ha.cluster = get_cluster_initialized_with_leader_and_failsafe()
+        self.ha.dcs._last_failsafe = self.ha.cluster.failsafe
         self.assertEqual(self.ha.run_cycle(), 'demoting self because DCS is not accessible and I was a leader')
         self.ha.state_handler.name = self.ha.cluster.leader.name
         self.assertEqual(self.ha.run_cycle(),
@@ -475,14 +476,15 @@ class TestHa(PostgresInit):
         with patch.object(Postgresql, 'slots', Mock(side_effect=Exception)):
             self.ha.patroni.request = Mock(side_effect=Exception)
             self.assertEqual(self.ha.run_cycle(), 'demoting self because DCS is not accessible and I was a leader')
-        self.ha.cluster.failsafe.clear()
-        self.ha.cluster.failsafe[self.ha.cluster.leader.name] = self.ha.cluster.leader.member.api_url
+        self.ha.dcs._last_failsafe.clear()
+        self.ha.dcs._last_failsafe[self.ha.cluster.leader.name] = self.ha.cluster.leader.member.api_url
         self.assertEqual(self.ha.run_cycle(),
                          'continue to run as a leader because failsafe mode is enabled and all members are accessible')
 
     def test_no_dcs_connection_primary_failsafe(self):
         self.ha.load_cluster_from_dcs = Mock(side_effect=DCSError('Etcd is not responding properly'))
         self.ha.cluster = get_cluster_initialized_with_leader_and_failsafe()
+        self.ha.dcs._last_failsafe = self.ha.cluster.failsafe
         self.ha.state_handler.name = self.ha.cluster.leader.name
         self.assertEqual(self.ha.run_cycle(),
                          'continue to run as a leader because failsafe mode is enabled and all members are accessible')
@@ -712,10 +714,11 @@ class TestHa(PostgresInit):
         self.ha.state_handler.is_leader = false
         self.ha.patroni.nofailover = False
         self.ha.fetch_node_status = get_node_status()
-        with patch.object(Cluster, 'failsafe', PropertyMock(return_value={'foo': ''})):
-            self.assertFalse(self.ha.is_healthiest_node())
-        with patch.object(Cluster, 'failsafe', PropertyMock(return_value={'postgresql0': ''})):
-            self.assertTrue(self.ha.is_healthiest_node())
+        self.ha.dcs._last_failsafe = {'foo': ''}
+        self.assertFalse(self.ha.is_healthiest_node())
+        self.ha.dcs._last_failsafe = {'postgresql0': ''}
+        self.assertTrue(self.ha.is_healthiest_node())
+        self.ha.dcs._last_failsafe = None
         with patch.object(Watchdog, 'is_healthy', PropertyMock(return_value=False)):
             self.assertFalse(self.ha.is_healthiest_node())
         with patch('patroni.postgresql.Postgresql.is_starting', return_value=True):

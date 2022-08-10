@@ -361,12 +361,11 @@ class TestRestApiHandler(unittest.TestCase):
         mock_dcs.get_cluster.return_value.config = ClusterConfig.from_node(1, config)
         MockRestApiServer(RestApiHandler, request)
 
-    @patch.object(MockPatroni, 'ha')
-    def test_do_GET_failsafe(self, mock_ha):
-        type(mock_ha.cluster).failsafe = PropertyMock(return_value={'node1': 'http://foo:8080/patroni'})
+    @patch.object(MockPatroni, 'dcs')
+    def test_do_GET_failsafe(self, mock_dcs):
+        type(mock_dcs).failsafe = PropertyMock(return_value={'node1': 'http://foo:8080/patroni'})
         self.assertIsNotNone(MockRestApiServer(RestApiHandler, 'GET /failsafe'))
-        type(mock_ha).cluster = PropertyMock(return_value=None)
-        type(mock_ha).old_cluster = PropertyMock(return_value=None)
+        type(mock_dcs).failsafe = PropertyMock(return_value=None)
         self.assertIsNotNone(MockRestApiServer(RestApiHandler, 'GET /failsafe'))
 
     def test_do_POST_failsafe(self):
