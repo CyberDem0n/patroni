@@ -31,9 +31,9 @@ Feature: dcs failsafe mode
     And I sleep for 2 seconds
     Then postgres1 role is the replica after 12 seconds
 
-  @dcs-failsafe
   Scenario: check leader and replica are both in /failsafe key after leader is back
     Given I start postgres0
+    And I start postgres1
     Then "members/postgres0" key in DCS has state=running after 10 seconds
     And "members/postgres1" key in DCS has state=running after 2 seconds
     And Response on GET http://127.0.0.1:8009/failsafe contains postgres1 after 10 seconds
