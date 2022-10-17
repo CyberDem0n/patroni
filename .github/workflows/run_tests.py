@@ -36,7 +36,11 @@ def main():
     env['PATH'] = path + os.pathsep + env['PATH']
     env['DCS'] = what
 
-    ret = subprocess.call(unbuffer + [sys.executable, '-m', 'behave'], env=env)
+    behave = unbuffer + [sys.executable, '-m', 'behave'],
+    if sys.platform == 'win32':
+        ret = subprocess.call(['runas' '/trustlevel:0x20000', ' '.join(behave)], env=env)
+    else:
+        ret = subprocess.call(behave, env=env)
 
     if ret != 0:
         if subprocess.call('grep . features/output/*_failed/*postgres?.*', shell=True) != 0:
