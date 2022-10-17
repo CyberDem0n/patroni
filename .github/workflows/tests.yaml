@@ -33,17 +33,5 @@ jobs:
     - name: Upload Coverage
       env:
         COVERALLS_FLAG_NAME: behave-windows-etcd-3.10
-        COVERALLS_PARALLEL: 'true'
         GITHUB_TOKEN: ${{ secrets.github_token }}
       run: python -m coveralls --service=github
-
-  coveralls-finish:
-    name: Finalize coveralls.io
-    needs: [behave]
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/setup-python@v2
-    - run: python -m pip install coveralls
-    - run: python -m coveralls --service=github --finish
-      env:
-        GITHUB_TOKEN: ${{ secrets.github_token }}
