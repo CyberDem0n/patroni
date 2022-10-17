@@ -41,6 +41,7 @@ def main():
         print(behave)
         print('runas /trustlevel:0x20000 {0}'.format(' '.join(behave)))
         print(env)
+        subprocess.call('runas /showtrustlevels')
         ret = subprocess.call('runas /trustlevel:0x20000 {0}'.format(' '.join(behave)), env=env, shell=True)
     else:
         ret = subprocess.call(behave, env=env)
