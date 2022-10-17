@@ -39,7 +39,7 @@ jobs:
 
   coveralls-finish:
     name: Finalize coveralls.io
-    needs: [unit, behave]
+    needs: [behave]
     runs-on: ubuntu-latest
     steps:
     - uses: actions/setup-python@v2
