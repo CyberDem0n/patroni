@@ -38,7 +38,7 @@ def main():
 
     behave = unbuffer + [sys.executable, '-m', 'behave'],
     if sys.platform == 'win32':
-        ret = subprocess.call(['runas', '/trustlevel:0x20000', ' '.join(behave)], env=env)
+        ret = subprocess.call('runas /trustlevel:0x20000 {0}'.format(' '.join(behave)), env=env, shell=True)
     else:
         ret = subprocess.call(behave, env=env)
 
