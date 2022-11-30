@@ -41,7 +41,7 @@ class TestCtl(unittest.TestCase):
         with patch.object(AbstractEtcdClientWithFailover, 'machines') as mock_machines:
             mock_machines.__get__ = Mock(return_value=['http://remotehost:2379'])
             self.runner = CliRunner()
-            self.e = get_dcs({'etcd': {'ttl': 30, 'host': 'ok:2379', 'retry_timeout': 10}}, 'foo')
+            self.e = get_dcs({'citus': {'group': 0}, 'etcd': {'ttl': 30, 'host': 'ok:2379', 'retry_timeout': 10}}, 'foo', None)
 
     def test_load_config(self):
         runner = CliRunner()
@@ -51,14 +51,14 @@ class TestCtl(unittest.TestCase):
 
     @patch('patroni.psycopg.connect', psycopg_connect)
     def test_get_cursor(self):
-        self.assertIsNone(get_cursor(get_cluster_initialized_without_leader(), {}, role='master'))
+        self.assertIsNone(get_cursor({}, get_cluster_initialized_without_leader(), None, {}, role='master'))
 
-        self.assertIsNotNone(get_cursor(get_cluster_initialized_with_leader(), {}, role='master'))
+        self.assertIsNotNone(get_cursor({}, get_cluster_initialized_with_leader(), None, {}, role='master'))
 
         # MockCursor returns pg_is_in_recovery as false
-        self.assertIsNone(get_cursor(get_cluster_initialized_with_leader(), {}, role='replica'))
+        self.assertIsNone(get_cursor({}, get_cluster_initialized_with_leader(), None, {}, role='replica'))
 
-        self.assertIsNotNone(get_cursor(get_cluster_initialized_with_leader(), {'dbname': 'foo'}, role='any'))
+        self.assertIsNotNone(get_cursor({}, get_cluster_initialized_with_leader(), None, {'dbname': 'foo'}, role='any'))
 
     def test_parse_dcs(self):
         assert parse_dcs(None) is None
@@ -75,7 +75,7 @@ class TestCtl(unittest.TestCase):
         cluster = get_cluster_initialized_with_leader(Failover(1, 'foo', 'bar', scheduled_at))
         del cluster.members[1].data['conn_url']
         for fmt in ('pretty', 'json', 'yaml', 'tsv', 'topology'):
-            self.assertIsNone(output_members(cluster, name='abc', fmt=fmt))
+            self.assertIsNone(output_members({}, cluster, name='abc', fmt=fmt))
 
     @patch('patroni.ctl.get_dcs')
     @patch.object(PoolManager, 'request', Mock(return_value=MockResponse()))
@@ -164,7 +164,7 @@ class TestCtl(unittest.TestCase):
 
     @patch('patroni.dcs.dcs_modules', Mock(return_value=['patroni.dcs.dummy', 'patroni.dcs.etcd']))
     def test_get_dcs(self):
-        self.assertRaises(PatroniCtlException, get_dcs, {'dummy': {}}, 'dummy')
+        self.assertRaises(PatroniCtlException, get_dcs, {'dummy': {}}, 'dummy', 0)
 
     @patch('patroni.psycopg.connect', psycopg_connect)
     @patch('patroni.ctl.query_member', Mock(return_value=([['mock column']], None)))
@@ -202,21 +202,21 @@ class TestCtl(unittest.TestCase):
 
     def test_query_member(self):
         with patch('patroni.ctl.get_cursor', Mock(return_value=MockConnect().cursor())):
-            rows = query_member(None, None, None, 'master', 'SELECT pg_catalog.pg_is_in_recovery()', {})
+            rows = query_member({}, None, None, None, None, 'master', 'SELECT pg_catalog.pg_is_in_recovery()', {})
             self.assertTrue('False' in str(rows))
 
             with patch.object(MockCursor, 'execute', Mock(side_effect=OperationalError('bla'))):
-                rows = query_member(None, None, None, 'replica', 'SELECT pg_catalog.pg_is_in_recovery()', {})
+                rows = query_member({}, None, None, None, None, 'replica', 'SELECT pg_catalog.pg_is_in_recovery()', {})
 
         with patch('patroni.ctl.get_cursor', Mock(return_value=None)):
-            rows = query_member(None, None, None, None, 'SELECT pg_catalog.pg_is_in_recovery()', {})
+            rows = query_member({}, None, None, None, None, None, 'SELECT pg_catalog.pg_is_in_recovery()', {})
             self.assertTrue('No connection to' in str(rows))
 
-            rows = query_member(None, None, None, 'replica', 'SELECT pg_catalog.pg_is_in_recovery()', {})
+            rows = query_member({}, None, None, None, None, 'replica', 'SELECT pg_catalog.pg_is_in_recovery()', {})
             self.assertTrue('No connection to' in str(rows))
 
         with patch('patroni.ctl.get_cursor', Mock(side_effect=OperationalError('bla'))):
-            rows = query_member(None, None, None, 'replica', 'SELECT pg_catalog.pg_is_in_recovery()', {})
+            rows = query_member({}, None, None, None, None, 'replica', 'SELECT pg_catalog.pg_is_in_recovery()', {})
 
     @patch('patroni.ctl.get_dcs')
     def test_dsn(self, mock_get_dcs):
@@ -353,23 +353,24 @@ class TestCtl(unittest.TestCase):
         assert 'Usage:' in result.output
 
     def test_get_any_member(self):
-        self.assertIsNone(get_any_member(get_cluster_initialized_without_leader(), role='master'))
+        self.assertIsNone(get_any_member({}, get_cluster_initialized_without_leader(), None, role='master'))
 
-        m = get_any_member(get_cluster_initialized_with_leader(), role='master')
+        m = get_any_member({}, get_cluster_initialized_with_leader(), None, role='master')
         self.assertEqual(m.name, 'leader')
 
     def test_get_all_members(self):
-        self.assertEqual(list(get_all_members(get_cluster_initialized_without_leader(), role='master')), [])
+        self.assertEqual(list(get_all_members({}, get_cluster_initialized_without_leader(), None, role='master')), [])
 
-        r = list(get_all_members(get_cluster_initialized_with_leader(), role='master'))
+        r = list(get_all_members({}, get_cluster_initialized_with_leader(), None, role='master'))
         self.assertEqual(len(r), 1)
         self.assertEqual(r[0].name, 'leader')
 
-        r = list(get_all_members(get_cluster_initialized_with_leader(), role='replica'))
+        r = list(get_all_members({}, get_cluster_initialized_with_leader(), None, role='replica'))
         self.assertEqual(len(r), 1)
         self.assertEqual(r[0].name, 'other')
 
-        self.assertEqual(len(list(get_all_members(get_cluster_initialized_without_leader(), role='replica'))), 2)
+        self.assertEqual(len(list(get_all_members({}, get_cluster_initialized_without_leader(),
+                                                  None, role='replica'))), 2)
 
     @patch('patroni.ctl.get_dcs')
     def test_members(self, mock_get_dcs):

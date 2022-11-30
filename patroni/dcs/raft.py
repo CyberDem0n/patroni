@@ -4,6 +4,7 @@ import os
 import threading
 import time
 
+from collections import defaultdict
 from pysyncobj import SyncObj, SyncObjConf, replicated, FAIL_REASON
 from pysyncobj.dns_resolver import globalDnsResolver
 from pysyncobj.node import TCPNode
@@ -11,7 +12,7 @@ from pysyncobj.transport import TCPTransport, CONNECTION_STATE
 from pysyncobj.utility import TcpUtility
 
 from . import AbstractDCS, ClusterConfig, Cluster, Failover, Leader, Member, SyncState, TimelineHistory
-from ..utils import validate_directory
+from ..utils import parse_int, validate_directory
 
 logger = logging.getLogger(__name__)
 
@@ -306,13 +307,7 @@ class Raft(AbstractDCS):
     def member(key, value):
         return Member.from_node(value['index'], os.path.basename(key), None, value['value'])
 
-    def _load_cluster(self):
-        prefix = self.client_path('')
-        response = self._sync_obj.get(prefix, recursive=True)
-        if not response:
-            return Cluster(None, None, None, None, [], None, None, None, None)
-        nodes = {os.path.relpath(key, prefix).replace('\\', '/'): value for key, value in response.items()}
-
+    def _cluster_from_nodes(self, nodes):
         # get initialize flag
         initialize = nodes.get(self._INITIALIZE)
         initialize = initialize and initialize['value']
@@ -364,6 +359,25 @@ class Raft(AbstractDCS):
         sync = SyncState.from_node(sync and sync['index'], sync and sync['value'])
 
         return Cluster(initialize, config, leader, last_lsn, members, failover, sync, history, slots)
+
+    def _cluster_loader(self, path):
+        response = self._sync_obj.get(path, recursive=True)
+        if not response:
+            return Cluster(None, None, None, None, [], None, None, None, None)
+        nodes = {key[len(path):]: value for key, value in response.items()}
+        return self._cluster_from_nodes(nodes)
+
+    def _citus_cluster_loader(self, path):
+        clusters = defaultdict(dict)
+        response = self._sync_obj.get(path, recursive=True)
+        for key, value in response.items():
+            key = key[len(path):].split('/', 1)
+            if len(key) == 2 and parse_int(key[0]) is not None:
+                clusters[key[0]][key[1]] = value
+        return {group: self._cluster_from_nodes(nodes) for group, nodes in clusters.items()}
+
+    def _load_cluster(self, path, loader):
+        return loader(path)
 
     def _write_leader_optime(self, last_lsn):
         return self._sync_obj.set(self.leader_optime_path, last_lsn, timeout=1)

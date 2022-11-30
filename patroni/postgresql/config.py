@@ -843,8 +843,21 @@ class ConfigHandler(object):
             if self.triggerfile_good_name not in self._config['recovery_conf'] and value:
                 self._config['recovery_conf'][self.triggerfile_good_name] = value
 
+    def adjust_citus_parameters(self, parameters):
+        # citus extension must be on the first place in shared_preload_libraries
+        shared_preload_libraries = list(filter(
+            lambda el: el and el != 'citus',
+            [p.strip() for p in parameters.get('shared_preload_libraries', '').split(',')]))
+        parameters['shared_preload_libraries'] = ','.join(['citus'] + shared_preload_libraries)
+
+        # if not explicitly set Citus overrides max_prepared_transactions to max_connections*2
+        if parameters.get('max_prepared_transactions') == 0:
+            parameters['max_prepared_transactions'] = parameters['max_connections'] * 2
+
     def get_server_parameters(self, config):
         parameters = config['parameters'].copy()
+        if isinstance(config.get('citus'), dict):
+            self.adjust_citus_parameters(parameters)
         listen_addresses, port = split_host_port(config['listen'], 5432)
         parameters.update(cluster_name=self._postgresql.scope, listen_addresses=listen_addresses, port=str(port))
         if config.get('synchronous_mode', False):
@@ -901,7 +914,9 @@ class ConfigHandler(object):
             ret['user'] = self._superuser['username']
             del ret['username']
         # ensure certain Patroni configurations are available
-        ret.update({'dbname': self._postgresql.database,
+        dbname = self._postgresql.database if self._postgresql.bootstrapping\
+            else self.get('citus', {}).get('database') or self._postgresql.database
+        ret.update({'dbname': dbname,
                     'fallback_application_name': 'Patroni',
                     'connect_timeout': 3,
                     'options': '-c statement_timeout=2000'})

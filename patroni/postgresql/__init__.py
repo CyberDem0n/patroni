@@ -19,6 +19,7 @@ from .callback_executor import CallbackExecutor
 from .cancellable import CancellableSubprocess
 from .config import ConfigHandler, mtime
 from .connection import Connection, get_connection_cursor
+from .citus import CitusDistNodeHandler
 from .misc import parse_history, parse_lsn, postgres_major_version_to_int
 from .postmaster import PostmasterProcess
 from .slots import SlotsHandler
@@ -62,6 +63,7 @@ class Postgresql(object):
               "pg_catalog.pg_is_in_recovery() AND pg_catalog.pg_is_{0}_replay_paused()")
 
     def __init__(self, config):
+        self.bootstrapping = False
         self.name = config['name']
         self.scope = config['scope']
         self._data_dir = config['data_dir']
@@ -80,10 +82,10 @@ class Postgresql(object):
 
         self._bin_dir = config.get('bin_dir') or ''
         self.bootstrap = Bootstrap(self)
-        self.bootstrapping = False
         self.__thread_ident = current_thread().ident
 
         self.slots_handler = SlotsHandler(self)
+        self.citus_handler = CitusDistNodeHandler(self)
 
         self._callback_executor = CallbackExecutor()
         self.__cb_called = False
@@ -911,6 +913,7 @@ class Postgresql(object):
         for _ in polling_loop(wait_seconds):
             data = self.controldata()
             if data.get('Database cluster state') == 'in production':
+                self.set_role('master')
                 return True
 
     def _pre_promote(self):
@@ -946,10 +949,11 @@ class Postgresql(object):
             return False
 
         self.slots_handler.on_promote()
+        self.citus_handler.schedule()
 
         ret = self.pg_ctl('promote', '-W')
         if ret:
-            self.set_role('master')
+            self.set_role('promoted')
             if on_success is not None:
                 on_success()
             self.call_nowait(ACTION_ON_ROLE_CHANGE)
@@ -1138,4 +1142,5 @@ class Postgresql(object):
         if not self._major_version:
             self.configure_server_parameters()
         self.slots_handler.schedule()
+        self.citus_handler.schedule()
         self._sysid = None

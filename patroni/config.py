@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import shutil
+import six
 import tempfile
 import yaml
 
@@ -392,7 +393,11 @@ class Config(object):
     def _build_effective_configuration(self, dynamic_configuration, local_configuration):
         config = self._safe_copy_dynamic_configuration(dynamic_configuration)
         for name, value in local_configuration.items():
-            if name == 'postgresql':
+            if name == 'citus':  # remove invalid citus configuration
+                if isinstance(value, dict) and isinstance(value.get('group'), six.integer_types)\
+                        and isinstance(value.get('database'), six.string_types):
+                    config[name] = value
+            elif name == 'postgresql':
                 for name, value in (value or {}).items():
                     if name == 'parameters':
                         config['postgresql'][name].update(self._process_postgresql_parameters(value, True))
@@ -437,7 +442,8 @@ class Config(object):
             'synchronous_mode',
             'synchronous_mode_strict',
             'synchronous_node_count',
-            'maximum_lag_on_syncnode'
+            'maximum_lag_on_syncnode',
+            'citus'
         )
 
         pg_config.update({p: config[p] for p in updated_fields if p in config})
@@ -455,3 +461,12 @@ class Config(object):
 
     def copy(self):
         return deepcopy(self.__effective_configuration)
+
+    def is_citus_cluster(self):
+        return bool(self.__effective_configuration.get('citus'))
+
+    def citus_group(self):
+        return self.__effective_configuration.get('citus', {}).get('group')
+
+    def is_citus_coordinator(self):
+        return self.citus_group() == 0

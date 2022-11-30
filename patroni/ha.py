@@ -88,6 +88,8 @@ class Ha(object):
         # Count of concurrent sync disabling requests. Value above zero means that we don't want to be synchronous
         # standby. Changes protected by _member_state_lock.
         self._disable_sync = 0
+        # Remember the last known member role written to the DCS in order to notify Citus coordinator
+        self._last_role = None
 
         # We need following property to avoid shutdown of postgres when join of Patroni to the postgres
         # already running as replica was aborted due to cluster not being initialized in DCS.
@@ -182,6 +184,18 @@ class Ha(object):
             tags['nosync'] = True
         return tags
 
+    def notify_citus_coordinator(self):
+        coordinator = self.dcs.get_citus_coordinator()
+        if coordinator and coordinator.leader.conn_kwargs:
+            try:
+                data = {'failover': 'complete',
+                        'group': self.patroni.config.citus_group(),
+                        'leader': self.state_handler.name}
+                self.patroni.request(coordinator.leader.member, 'post', 'citus', data, timeout=2, retries=0)
+            except Exception as e:
+                logger.warning('Request to Citus coordinator leader %s %s failed: %r',
+                               coordinator.leader.name, coordinator.leader.member.api_url, e)
+
     def touch_member(self):
         with self._member_state_lock:
             data = {
@@ -234,7 +248,12 @@ class Ha(object):
             if self.is_paused():
                 data['pause'] = True
 
-            return self.dcs.touch_member(data)
+            ret = self.dcs.touch_member(data)
+            if ret and self.patroni.config.is_citus_cluster() and not self.patroni.config.is_citus_coordinator():
+                if self._last_role != data['role'] and data['role'] == 'master':
+                    self.notify_citus_coordinator()
+                self._last_role = data['role']
+            return ret
 
     def clone(self, clone_member=None, msg='(without leader)'):
         if self.is_standby_cluster() and not isinstance(clone_member, RemoteMember):
@@ -616,8 +635,9 @@ class Ha(object):
             self.state_handler.set_role('master')
             self.process_sync_replication()
             self.update_cluster_history()
+            self.citus_sync_pg_dist_node()
             return message
-        elif self.state_handler.role == 'master':
+        elif self.state_handler.role in ('master', 'promoted'):
             self.process_sync_replication()
             return message
         else:
@@ -629,7 +649,7 @@ class Ha(object):
                     # promotion until next cycle. TODO: trigger immediate retry of run_cycle
                     return 'Postponing promotion because synchronous replication state was updated by somebody else'
                 self.state_handler.config.set_synchronous_standby(['*'] if self.is_synchronous_mode_strict() else [])
-            if self.state_handler.role != 'master':
+            if self.state_handler.role not in ('master', 'promoted'):
                 def on_success():
                     self._rewind.reset_state()
                     logger.info("cleared rewind state after becoming the leader")
@@ -1303,6 +1323,15 @@ class Ha(object):
         if not self.watchdog.activate():
             logger.error('Cancelling bootstrap because watchdog activation failed')
             self.cancel_initialization()
+
+        # We want to be connected to the citus database on coordinator
+        # The resolve_connection_addresses() method takes into according
+        # state_handler.bootstrapping when building the connection string.
+        # After that we close the existing connection and let it reconnect.
+        if self.patroni.config.is_citus_coordinator():
+            self.state_handler.config.resolve_connection_addresses()
+            self.state_handler.connection().close()
+
         self._rewind.ensure_checkpoint_after_promote(self.wakeup)
         self.dcs.initialize(create_new=(self.cluster.initialize is None), sysid=self.state_handler.sysid)
         self.dcs.set_config_value(json.dumps(self.patroni.config.dynamic_configuration, separators=(',', ':')))
@@ -1619,3 +1648,7 @@ class Ha(object):
 
     def get_remote_master(self):
         return self.get_remote_member()
+
+    def citus_sync_pg_dist_node(self):
+        if self.patroni.config.is_citus_coordinator():
+            self.state_handler.citus_handler.sync_pg_dist_node(self.cluster)

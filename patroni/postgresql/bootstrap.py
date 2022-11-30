@@ -7,7 +7,7 @@ import time
 from six import string_types
 
 from ..dcs import RemoteMember
-from ..psycopg import quote_ident, quote_literal
+from ..psycopg import connect, quote_ident, quote_literal
 from ..utils import deep_compare
 
 logger = logging.getLogger(__name__)
@@ -322,6 +322,27 @@ END;$$""".format(quote_literal(name), quote_ident(name, self._postgresql.connect
             self._postgresql.query('RESET log_min_duration_statement')
             self._postgresql.query('RESET log_statement')
 
+    def maybe_setup_citus(self):
+        citus = self._postgresql.config.get('citus')
+        if isinstance(citus, dict):
+            conn_kwargs = {**self._postgresql.config.local_connect_kwargs, 'options': '-c synchronous_commit=local'}
+            try:
+                conn = connect(**conn_kwargs)
+                conn.autocommit = True
+                with conn.cursor() as cur:
+                    cur.execute('CREATE DATABASE {0}'.format(quote_ident(citus['database'], conn)))
+            finally:
+                conn.close()
+
+            conn_kwargs['dbname'] = citus['database']
+            try:
+                conn = connect(**conn_kwargs)
+                conn.autocommit = True
+                with conn.cursor() as cur:
+                    cur.execute('CREATE EXTENSION citus')
+            finally:
+                conn.close()
+
     def post_bootstrap(self, config, task):
         try:
             postgresql = self._postgresql
@@ -343,7 +364,7 @@ END;$$""".format(quote_literal(name), quote_ident(name, self._postgresql.connect
 BEGIN
     SET local synchronous_commit = 'local';
     GRANT EXECUTE ON function pg_catalog.{0} TO {1};
-END;$$""".format(f, quote_ident(rewind['username'], self._postgresql.connection()))
+END;$$""".format(f, quote_ident(rewind['username'], postgresql.connection()))
                         postgresql.query(sql)
 
                 for name, value in (config.get('users') or {}).items():
@@ -375,6 +396,9 @@ END;$$""".format(f, quote_ident(rewind['username'], self._postgresql.connection(
                             postgresql.reload()
                             time.sleep(1)  # give a time to postgres to "reload" configuration files
                             postgresql.connection().close()  # close connection to reconnect with a new password
+                else:  # initdb
+                    # We may want create database and extension for citus
+                    self.maybe_setup_citus()
         except Exception:
             logger.exception('post_bootstrap')
             task.complete(False)

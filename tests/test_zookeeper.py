@@ -162,15 +162,15 @@ class TestZooKeeper(unittest.TestCase):
     def test_get_children(self):
         self.assertListEqual(self.zk.get_children('/no_node'), [])
 
-    def test__inner_load_cluster(self):
+    def test__cluster_loader(self):
         self.zk._base_path = self.zk._base_path.replace('test', 'bla')
-        self.zk._inner_load_cluster()
+        self.zk._cluster_loader(self.zk.client_path(''))
         self.zk._base_path = self.zk._base_path = '/broken'
-        self.zk._inner_load_cluster()
+        self.zk._cluster_loader(self.zk.client_path(''))
         self.zk._base_path = self.zk._base_path = '/legacy'
-        self.zk._inner_load_cluster()
+        self.zk._cluster_loader(self.zk.client_path(''))
         self.zk._base_path = self.zk._base_path = '/no_node'
-        self.zk._inner_load_cluster()
+        self.zk._cluster_loader(self.zk.client_path(''))
 
     def test_get_cluster(self):
         self.assertRaises(ZooKeeperError, self.zk.get_cluster)
