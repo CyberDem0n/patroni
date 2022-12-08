@@ -596,9 +596,12 @@ class RestApiHandler(BaseHTTPRequestHandler):
         request = self._read_json_content()
         if not request:
             return
-        # For now we will just wake up the main HA loop, but in future do something more sophisticated
-        self.server.patroni.ha.wakeup()
-        self._write_response(202, 'action scheduled')
+
+        patroni = self.server.patroni
+        if patroni.config.is_citus_coordinator() and patroni.ha.is_leader():
+            cluster = patroni.ha.dcs.get_cluster(True)
+            patroni.ha.state_handler.citus_handler.handle_event(cluster, request)
+        self._write_response(200, 'OK')
 
     def parse_request(self):
         """Override parse_request method to enrich basic functionality of `BaseHTTPRequestHandler` class

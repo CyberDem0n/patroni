@@ -355,9 +355,15 @@ class Config(object):
                               'CACERT', 'CERT', 'KEY', 'VERIFY', 'TOKEN', 'CHECKS', 'DC', 'CONSISTENCY',
                               'REGISTER_SERVICE', 'SERVICE_CHECK_INTERVAL', 'SERVICE_CHECK_TLS_SERVER_NAME',
                               'NAMESPACE', 'CONTEXT', 'USE_ENDPOINTS', 'SCOPE_LABEL', 'ROLE_LABEL', 'POD_IP',
-                              'PORTS', 'LABELS', 'BYPASS_API_SERVICE', 'KEY_PASSWORD', 'USE_SSL', 'SET_ACLS') and name:
+                              'PORTS', 'LABELS', 'BYPASS_API_SERVICE', 'KEY_PASSWORD', 'USE_SSL', 'SET_ACLS',
+                              'GROUP', 'DATABASE') and name:
                     value = os.environ.pop(param)
-                    if suffix == 'PORT':
+                    if name == 'CITUS':
+                        if suffix == 'GROUP':
+                            value = parse_int(value)
+                        elif suffix != 'DATABASE':
+                            value = None
+                    elif suffix == 'PORT':
                         value = value and parse_int(value)
                     elif suffix in ('HOSTS', 'PORTS', 'CHECKS'):
                         value = value and _parse_list(value)
@@ -365,7 +371,7 @@ class Config(object):
                         value = _parse_dict(value)
                     elif suffix in ('USE_PROXIES', 'REGISTER_SERVICE', 'USE_ENDPOINTS', 'BYPASS_API_SERVICE', 'VERIFY'):
                         value = parse_bool(value)
-                    if value:
+                    if value is not None:
                         ret[name.lower()][suffix.lower()] = value
         for dcs in ('etcd', 'etcd3'):
             if dcs in ret:

@@ -248,7 +248,7 @@ def get_all_members(obj, cluster, group, role='master'):
     if role == 'master':
         for cluster in clusters.values():
             if cluster.leader is not None and cluster.leader.name:
-                yield cluster.leader
+                yield cluster.leader.member
         return
 
     for cluster in clusters.values():

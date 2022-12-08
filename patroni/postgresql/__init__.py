@@ -77,6 +77,7 @@ class Postgresql(object):
 
         self._pending_restart = False
         self._connection = Connection()
+        self.citus_handler = CitusDistNodeHandler(self)
         self.config = ConfigHandler(self, config)
         self.config.check_directories()
 
@@ -85,7 +86,6 @@ class Postgresql(object):
         self.__thread_ident = current_thread().ident
 
         self.slots_handler = SlotsHandler(self)
-        self.citus_handler = CitusDistNodeHandler(self)
 
         self._callback_executor = CallbackExecutor()
         self.__cb_called = False
@@ -514,7 +514,7 @@ class Postgresql(object):
         logger.warning("Timed out waiting for PostgreSQL to start")
         return False
 
-    def start(self, timeout=None, task=None, block_callbacks=False, role=None):
+    def start(self, timeout=None, task=None, block_callbacks=False, role=None, after_start=None):
         """Start PostgreSQL
 
         Waits for postmaster to open ports or terminate so pg_isready can be used to check startup completion
@@ -585,6 +585,8 @@ class Postgresql(object):
 
         ret = self.wait_for_startup(start_timeout)
         if ret is not None:
+            if ret and after_start:
+                after_start()
             return ret
         elif timeout is not None:
             return False
@@ -611,7 +613,7 @@ class Postgresql(object):
             return 'not accessible or not healty'
 
     def stop(self, mode='fast', block_callbacks=False, checkpoint=None,
-             on_safepoint=None, on_shutdown=None, stop_timeout=None):
+             on_safepoint=None, on_shutdown=None, before_shutdown=None, stop_timeout=None):
         """Stop PostgreSQL
 
         Supports a callback when a safepoint is reached. A safepoint is when no user backend can return a successful
@@ -620,11 +622,13 @@ class Postgresql(object):
 
         :param on_safepoint: This callback is called when no user backends are running.
         :param on_shutdown: is called when pg_controldata starts reporting `Database cluster state: shut down`
+        :param before_shutdown: is called after running optional CHECKPOINT and before running pg_ctl stop
         """
         if checkpoint is None:
             checkpoint = False if mode == 'immediate' else True
 
-        success, pg_signaled = self._do_stop(mode, block_callbacks, checkpoint, on_safepoint, on_shutdown, stop_timeout)
+        success, pg_signaled = self._do_stop(mode, block_callbacks, checkpoint, on_safepoint,
+                                             on_shutdown, before_shutdown, stop_timeout)
         if success:
             # block_callbacks is used during restart to avoid
             # running start/stop callbacks in addition to restart ones
@@ -637,7 +641,7 @@ class Postgresql(object):
             self.set_state('stop failed')
         return success
 
-    def _do_stop(self, mode, block_callbacks, checkpoint, on_safepoint, on_shutdown, stop_timeout):
+    def _do_stop(self, mode, block_callbacks, checkpoint, on_safepoint, on_shutdown, before_shutdown, stop_timeout):
         postmaster = self.is_running()
         if not postmaster:
             if on_safepoint:
@@ -649,6 +653,9 @@ class Postgresql(object):
 
         if not block_callbacks:
             self.set_state('stopping')
+
+        if before_shutdown:
+            before_shutdown()
 
         # Send signal to postmaster to stop
         success = postmaster.signal_stop(mode, self.pgcommand('pg_ctl'))
@@ -777,7 +784,8 @@ class Postgresql(object):
 
         return self.state == 'running'
 
-    def restart(self, timeout=None, task=None, block_callbacks=False, role=None):
+    def restart(self, timeout=None, task=None, block_callbacks=False,
+                role=None, before_shutdown=None, after_start=None):
         """Restarts PostgreSQL.
 
         When timeout parameter is set the call will block either until PostgreSQL has started, failed to start or
@@ -788,7 +796,8 @@ class Postgresql(object):
         self.set_state('restarting')
         if not block_callbacks:
             self.__cb_pending = ACTION_ON_RESTART
-        ret = self.stop(block_callbacks=True) and self.start(timeout, task, True, role)
+        ret = self.stop(block_callbacks=True, before_shutdown=before_shutdown)\
+            and self.start(timeout, task, True, role, after_start)
         if not ret and not self.is_starting():
             self.set_state('restart failed ({0})'.format(self.state))
         return ret
@@ -931,8 +940,8 @@ class Postgresql(object):
             logger.info('pre_promote script `%s` exited with %s', cmd, ret)
         return ret == 0
 
-    def promote(self, wait_seconds, task, on_success=None):
-        if self.role == 'master':
+    def promote(self, wait_seconds, task, before_promote=None, on_success=None):
+        if self.role in ('promoted', 'master'):
             return True
 
         ret = self._pre_promote()
@@ -948,8 +957,11 @@ class Postgresql(object):
             logger.info("PostgreSQL promote cancelled.")
             return False
 
+        if before_promote is not None:
+            before_promote()
+
         self.slots_handler.on_promote()
-        self.citus_handler.schedule()
+        self.citus_handler.schedule_cache_rebuild()
 
         ret = self.pg_ctl('promote', '-W')
         if ret:
@@ -1142,5 +1154,5 @@ class Postgresql(object):
         if not self._major_version:
             self.configure_server_parameters()
         self.slots_handler.schedule()
-        self.citus_handler.schedule()
+        self.citus_handler.schedule_cache_rebuild()
         self._sysid = None

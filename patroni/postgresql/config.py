@@ -843,7 +843,7 @@ class ConfigHandler(object):
             if self.triggerfile_good_name not in self._config['recovery_conf'] and value:
                 self._config['recovery_conf'][self.triggerfile_good_name] = value
 
-    def adjust_citus_parameters(self, parameters):
+    def _adjust_citus_parameters(self, parameters):
         # citus extension must be on the first place in shared_preload_libraries
         shared_preload_libraries = list(filter(
             lambda el: el and el != 'citus',
@@ -857,7 +857,7 @@ class ConfigHandler(object):
     def get_server_parameters(self, config):
         parameters = config['parameters'].copy()
         if isinstance(config.get('citus'), dict):
-            self.adjust_citus_parameters(parameters)
+            self._adjust_citus_parameters(parameters)
         listen_addresses, port = split_host_port(config['listen'], 5432)
         parameters.update(cluster_name=self._postgresql.scope, listen_addresses=listen_addresses, port=str(port))
         if config.get('synchronous_mode', False):
@@ -914,9 +914,7 @@ class ConfigHandler(object):
             ret['user'] = self._superuser['username']
             del ret['username']
         # ensure certain Patroni configurations are available
-        dbname = self._postgresql.database if self._postgresql.bootstrapping\
-            else self.get('citus', {}).get('database') or self._postgresql.database
-        ret.update({'dbname': dbname,
+        ret.update({'dbname': self._postgresql.database,
                     'fallback_application_name': 'Patroni',
                     'connect_timeout': 3,
                     'options': '-c statement_timeout=2000'})
@@ -940,7 +938,12 @@ class ConfigHandler(object):
             if self._config.get('use_unix_socket_repl') else tcp_local_address
 
         self._postgresql.connection_string = uri('postgres', netloc, self._postgresql.database)
-        self._postgresql.set_connection_kwargs(self.local_connect_kwargs)
+        conn_kwargs = self.local_connect_kwargs
+        self._postgresql.set_connection_kwargs(conn_kwargs)
+        if self._config.get('citus'):
+            conn_kwargs = {**conn_kwargs, 'dbname': self._config.get('citus')['database']}
+            conn_kwargs.pop('options')
+            self._postgresql.citus_handler.set_conn_kwargs(conn_kwargs)
 
     def _get_pg_settings(self, names):
         return {r[0]: r for r in self._postgresql.query(('SELECT name, setting, unit, vartype, context, sourcefile'

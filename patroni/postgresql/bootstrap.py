@@ -340,6 +340,12 @@ END;$$""".format(quote_literal(name), quote_ident(name, self._postgresql.connect
                 conn.autocommit = True
                 with conn.cursor() as cur:
                     cur.execute('CREATE EXTENSION citus')
+                    superuser = self._postgresql.config.superuser
+                    params = {k: superuser[k] for k in ('password', 'sslcert', 'sslkey') if k in superuser}
+                    if params:
+                        cur.execute("INSERT INTO pg_catalog.pg_dist_authinfo VALUES"
+                                    "(0, pg_catalog.current_user(), %s)",
+                                    (self._postgresql.config.format_dsn(params),))
             finally:
                 conn.close()
 
