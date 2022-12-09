@@ -10,7 +10,7 @@ Feature: citus
     Then replication works from postgres1 to postgres2 after 15 seconds
     And postgres1 is registered in the coordinator postgres0 as the worker in group 1
 
-  Scenario: worker switchover doesn't break client connections to the coordinator
+  Scenario: worker switchover doesn't break client queries on the coordinator
     Given I create a distributed table on postgres0
     And I start a thread inserting data on postgres0
     When I run patronictl.py switchover batman --group 1 --force
@@ -23,5 +23,16 @@ Feature: citus
     And replication works from postgres1 to postgres2 after 15 seconds
     And postgres1 is registered in the coordinator postgres0 as the worker in group 1
     And a thread is still alive
-    And I stop a thread
-    And a distributed table on postgres0 has expected rows
+    When I stop a thread
+    Then a distributed table on postgres0 has expected rows
+
+  Scenario: worker primary restart doesn't break client queries on the coordinator
+    Given I cleanup a distributed table on postgres0
+    And I start a thread inserting data on postgres0
+    When I run patronictl.py restart batman postgres1 --group 1 --force
+    Then I receive a response returncode 0
+    And replication works from postgres1 to postgres2 after 15 seconds
+    And postgres1 is registered in the coordinator postgres0 as the worker in group 1
+    And a thread is still alive
+    When I stop a thread
+    Then a distributed table on postgres0 has expected rows

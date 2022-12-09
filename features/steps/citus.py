@@ -34,6 +34,11 @@ def create_distributed_table(context, name):
     context.pctl.query(name, "SELECT create_distributed_table('d','id')")
 
 
+@step('I cleanup a distributed table on {name:w}')
+def cleanup_distributed_table(context, name):
+    context.pctl.query(name, 'TRUNCATE d')
+
+
 def insert_thread(query_func, context):
     while True:
         if context.thread_stop_event.is_set():
@@ -64,6 +69,8 @@ def thread_is_alive(context):
 @step("I stop a thread")
 def stop_insert_thread(context):
     context.thread_stop_event.set()
+    context.thread.join(1*context.timeout_multiplier)
+    assert not context.thread.is_alive(), "Thread is still alive"
 
 
 @step("a distributed table on {name:w} has expected rows")
