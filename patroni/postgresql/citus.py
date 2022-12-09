@@ -14,6 +14,7 @@ class PgDistNode(object):
 
     def __init__(self, group, host, port, event, nodeid=None, timeout=None):
         self.group = group
+        # A weird way of pausing client connections by adding the `-demoted` suffix to the hostname
         self.host = host + ('-demoted' if event == 'before_demote' else '')
         self.port = port
         # Event that is trying to change or changed the given row.
@@ -187,8 +188,7 @@ class CitusDistNodeHandler(Thread):
             task.nodeid = self.query("SELECT pg_catalog.citus_add_node(%s, %s, %s, 'primary', 'default')",
                                      task.host, task.port, task.group).fetchone()[0]
         elif task.nodeid is not None:
-            # A weird way of pausing client connections by adding the `-demoted` suffix to the hostname
-            self.query('SELECT pg_catalog.citus_update_node(%s, %s, %s, true, 100)',
+            self.query('SELECT pg_catalog.citus_update_node(%s, %s, %s, true, 10000)',
                        task.nodeid, task.host, task.port)
 
     def process_task(self, task):
@@ -263,8 +263,15 @@ class CitusDistNodeHandler(Thread):
 
     def _add_task(self, task):
         with self._condition:
-            # Override if there is already a task for the same group
             i = self.find_task_by_group(task.group)
+
+            # task.timeout is None is an indicator that it was scheduled
+            # from the sync_pg_dist_node() and we don't want to override
+            # already existing task created from REST API.
+            if task.timeout is None and (i is not None or self._in_flight and self._in_flight.group == task.group):
+                return False
+
+            # Override already existing task for the same worker group
             if i is not None:
                 if task != self._tasks[i]:
                     logger.debug('Overriding existing task: %s != %s', self._tasks[i], task)

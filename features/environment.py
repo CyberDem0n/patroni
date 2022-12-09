@@ -334,11 +334,12 @@ class AbstractDcsController(AbstractController):
         if self._work_directory:
             shutil.rmtree(self._work_directory)
 
-    def path(self, key=None, scope='batman'):
-        return self._CLUSTER_NODE.format(scope) + (key and '/' + key or '')
+    def path(self, key=None, scope='batman', group=None):
+        citus_group = '/{0}'.format(group) if group is not None else ''
+        return self._CLUSTER_NODE.format(scope) + citus_group + (key and '/' + key or '')
 
     @abc.abstractmethod
-    def query(self, key, scope='batman'):
+    def query(self, key, scope='batman', group=None):
         """ query for a value of a given key """
 
     @abc.abstractmethod
@@ -386,11 +387,11 @@ class ConsulController(AbstractDcsController):
         except Exception:
             return False
 
-    def path(self, key=None, scope='batman'):
-        return super(ConsulController, self).path(key, scope)[1:]
+    def path(self, key=None, scope='batman', group=None):
+        return super(ConsulController, self).path(key, scope, group)[1:]
 
-    def query(self, key, scope='batman'):
-        _, value = self._client.kv.get(self.path(key, scope))
+    def query(self, key, scope='batman', group=None):
+        _, value = self._client.kv.get(self.path(key, scope, group))
         return value and value['Value'].decode('utf-8')
 
     def cleanup_service_tree(self):
@@ -430,10 +431,10 @@ class EtcdController(AbstractEtcdController):
         super(EtcdController, self).__init__(context, EtcdClient)
         os.environ['PATRONI_ETCD_HOST'] = 'localhost:2379'
 
-    def query(self, key, scope='batman'):
+    def query(self, key, scope='batman', group=None):
         import etcd
         try:
-            return self._client.get(self.path(key, scope)).value
+            return self._client.get(self.path(key, scope, group)).value
         except etcd.EtcdKeyNotFound:
             return None
 
@@ -454,9 +455,9 @@ class Etcd3Controller(AbstractEtcdController):
         super(Etcd3Controller, self).__init__(context, Etcd3Client)
         os.environ['PATRONI_ETCD3_HOST'] = 'localhost:2379'
 
-    def query(self, key, scope='batman'):
+    def query(self, key, scope='batman', group=None):
         import base64
-        response = self._client.range(self.path(key, scope))
+        response = self._client.range(self.path(key, scope, group))
         for k in response.get('kvs', []):
             return base64.b64decode(k['value']).decode('utf-8') if 'value' in k else None
 
@@ -505,7 +506,7 @@ class KubernetesController(AbstractDcsController):
             except Exception:
                 break
 
-    def query(self, key, scope='batman'):
+    def query(self, key, scope='batman', group=None):
         if key.startswith('members/'):
             pod = self._api.read_namespaced_pod(key[8:], self._namespace)
             return (pod.metadata.annotations or {}).get('status', '')
@@ -554,10 +555,10 @@ class ZooKeeperController(AbstractDcsController):
     def _start(self):
         pass  # TODO: implement later
 
-    def query(self, key, scope='batman'):
+    def query(self, key, scope='batman', group=None):
         import kazoo.exceptions
         try:
-            return self._client.get(self.path(key, scope))[0].decode('utf-8')
+            return self._client.get(self.path(key, scope, group))[0].decode('utf-8')
         except kazoo.exceptions.NoNodeError:
             return None
 
@@ -624,8 +625,8 @@ class RaftController(AbstractDcsController):
                                 '--source=patroni', '-p', 'patroni_raft_controller.py'],
                                 stdout=self._log, stderr=subprocess.STDOUT, env=env)
 
-    def query(self, key, scope='batman'):
-        ret = self._raft.get(self.path(key, scope))
+    def query(self, key, scope='batman', group=None):
+        ret = self._raft.get(self.path(key, scope, group))
         return ret and ret['value']
 
     def set(self, key, value):
@@ -914,9 +915,12 @@ def after_all(context):
 def before_feature(context, feature):
     """ create per-feature output directory to collect Patroni and PostgreSQL logs """
     if feature.name == 'watchdog' and os.name == 'nt':
-        feature.skip("Watchdog isn't supported on Windows")
-    else:
-        context.pctl.create_and_set_output_directory(feature.name)
+        return feature.skip("Watchdog isn't supported on Windows")
+    elif feature.name == 'citus':
+        lib = subprocess.check_output(['pg_config', '--pkglibdir']).decode('utf-8').strip()
+        if not os.path.exists(os.path.join(lib, 'citus.so')):
+            return feature.skip("Citus extenstion isn't available")
+    context.pctl.create_and_set_output_directory(feature.name)
 
 
 def after_feature(context, feature):

@@ -326,13 +326,14 @@ END;$$""".format(quote_literal(name), quote_ident(name, self._postgresql.connect
         citus = self._postgresql.config.get('citus')
         if isinstance(citus, dict):
             conn_kwargs = {**self._postgresql.config.local_connect_kwargs, 'options': '-c synchronous_commit=local'}
-            try:
-                conn = connect(**conn_kwargs)
-                conn.autocommit = True
-                with conn.cursor() as cur:
-                    cur.execute('CREATE DATABASE {0}'.format(quote_ident(citus['database'], conn)))
-            finally:
-                conn.close()
+            if citus['database'] != self._postgresql.database:
+                try:
+                    conn = connect(**conn_kwargs)
+                    conn.autocommit = True
+                    with conn.cursor() as cur:
+                        cur.execute('CREATE DATABASE {0}'.format(quote_ident(citus['database'], conn)))
+                finally:
+                    conn.close()
 
             conn_kwargs['dbname'] = citus['database']
             try:

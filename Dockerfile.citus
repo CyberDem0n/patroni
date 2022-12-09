@@ -58,6 +58,8 @@ RUN set -ex \
     # Download confd
     && curl -sL https://github.com/kelseyhightower/confd/releases/download/v${CONFDVERSION}/confd-${CONFDVERSION}-linux-amd64 \
             > /usr/local/bin/confd && chmod +x /usr/local/bin/confd \
+    # Prepare client cert for HAProxy
+    && cat /etc/ssl/private/ssl-cert-snakeoil.key  /etc/ssl/certs/ssl-cert-snakeoil.pem > /etc/ssl/private/ssl-cert-snakeoil.crt \
 \
     # Clean up all useless packages and some files
     && apt-get purge -y --allow-remove-essential python3-pip gzip bzip2 util-linux e2fsprogs \
@@ -102,7 +104,7 @@ RUN if [ "$COMPRESS" = "true" ]; then \
         && echo 'postgres ALL=(ALL) NOPASSWD: /bin/tar xpJf /a.tar.xz -C /, /bin/rm /a.tar.xz, /bin/ln -snf dash /bin/sh' >> /etc/sudoers \
         && ln -snf busybox /bin/sh \
         && files="/bin/sh /usr/bin/sudo /usr/lib/sudo/sudoers.so /lib/x86_64-linux-gnu/security/pam_*.so" \
-        && libs="$(ldd $files | awk '{print $3;}' | grep '^/' | sort -u) /lib/x86_64-linux-gnu/ld-linux-x86-64.so.* /lib/x86_64-linux-gnu/libnsl.so.* /lib/x86_64-linux-gnu/libnss_compat.so.*" \
+        && libs="$(ldd $files | awk '{print $3;}' | grep '^/' | sort -u) /lib/x86_64-linux-gnu/ld-linux-x86-64.so.* /lib/x86_64-linux-gnu/libnsl.so.* /lib/x86_64-linux-gnu/libnss_compat.so.* /lib/x86_64-linux-gnu/libnss_files.so.*" \
         && (echo /var/run $files $libs | tr ' ' '\n' && realpath $files $libs) | sort -u | sed 's/^\///' > /exclude \
         && find /etc/alternatives -xtype l -delete \
         && save_dirs="usr lib var bin sbin etc/ssl etc/init.d etc/alternatives etc/apt" \
@@ -161,7 +163,6 @@ RUN sed -i 's/env python/&3/' /patroni*.py \
     && sed -i 's/^#  insecure: .*/  insecure: on/' postgres?.yml \
     && sed -i 's/^#\(    synchronous_mode\): .*/\1: on/' postgres?.yml \
     # client cert for HAProxy to access Patroni REST API
-    && cat /etc/ssl/private/ssl-cert-snakeoil.key  /etc/ssl/certs/ssl-cert-snakeoil.pem > /etc/ssl/private/ssl-cert-snakeoil.crt \
     && if [ "$COMPRESS" = "true" ]; then chmod u+s /usr/bin/sudo; fi \
     && chmod +s /bin/ping \
     && chown -R postgres:postgres $PGHOME /run /etc/haproxy
