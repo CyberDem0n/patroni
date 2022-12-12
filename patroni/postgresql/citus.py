@@ -126,20 +126,18 @@ class CitusDistNodeHandler(Thread):
         cache are matching the cluster view from DCS by creating tasks
         the same way as it is done from the REST API."""
 
-        try:
-            with self._condition:
-                if not self.is_alive():
-                    self.start()
+        with self._condition:
+            if not self.is_alive():
+                self.start()
 
-            self.add_task('after_promote', 0, self._postgresql.connection_string)
+        self.add_task('after_promote', 0, self._postgresql.connection_string)
 
-            for group, worker in cluster.workers.items():
-                group = int(group)
-                leader = worker.leader
-                if leader and leader.conn_url and leader.data.get('role') == 'master':
-                    self.add_task('after_promote', group, leader.conn_url)
-        except Exception:
-            logger.exception('Exception when scheduling pg_dist_node sync')
+        for group, worker in cluster.workers.items():
+            group = int(group)
+            leader = worker.leader
+            if leader and leader.conn_url\
+                    and leader.data.get('role') == 'master' and leader.data.get('state') == 'running':
+                self.add_task('after_promote', group, leader.conn_url)
 
     def find_task_by_group(self, group):
         for i, task in enumerate(self._tasks):
@@ -167,9 +165,10 @@ class CitusDistNodeHandler(Thread):
                     if i is None:
                         break
                     task = self._tasks[i]
-                    if task != self._pg_dist_node.get(task.group):
+                    if task == self._pg_dist_node.get(task.group):
+                        self._tasks.pop(i)  # nothing to do because cached version of pg_dist_node already matches
+                    else:
                         break
-                    self._tasks.pop(i)
             task = self._tasks[i] if i is not None else None
 
             # When tasks are added it could happen that self._pg_dist_node
@@ -234,29 +233,26 @@ class CitusDistNodeHandler(Thread):
                 update_cache = self.process_task(task)
             except Exception as e:
                 logger.error('Exception when working with pg_dist_node: %r', e)
-            else:
-                with self._condition:
-                    if self._tasks:
-                        if update_cache:
-                            self._pg_dist_node[task.group] = task
-                        if id(self._tasks[i]) == id(task):
-                            self._tasks.pop(i)
+                update_cache = False
+            with self._condition:
+                if self._tasks:
+                    if update_cache:
+                        self._pg_dist_node[task.group] = task
+                    if id(self._tasks[i]) == id(task):
+                        self._tasks.pop(i)
             task.wakeup()
 
     def run(self):
-        old_in_flight = None
         while True:
             try:
                 with self._condition:
-                    if old_in_flight and self._in_flight and id(old_in_flight) == id(self._in_flight):
+                    timeout = self._in_flight.deadline - time.time() if self._in_flight and len(self._tasks) else None
+                    if timeout is None or timeout > 0:
+                        self._condition.wait(timeout)
+                    else:
                         logger.warning('Rolling back transaction. Last known status: %s', self._in_flight)
                         self.query('ROLLBACK')
-                        old_in_flight = self._in_flight = None
-
-                    timeout = self._in_flight.deadline - time.time() if self._in_flight else None
-                    old_in_flight = self._in_flight
-                    if timeout is not None and timeout > 0:
-                        self._condition.wait(timeout)
+                        self._in_flight = None
                 self.process_tasks()
             except Exception:
                 logger.exception('run')
@@ -288,7 +284,10 @@ class CitusDistNodeHandler(Thread):
         return False
 
     def add_task(self, event, group, conn_url, timeout=None):
-        r = urlparse(conn_url)
+        try:
+            r = urlparse(conn_url)
+        except Exception as e:
+            return logger.error('Failed to parse connection url %s: %r', conn_url, e)
         host = r.hostname
         port = r.port or 5432
         task = PgDistNode(group, host, port, event, timeout=timeout)
@@ -298,7 +297,7 @@ class CitusDistNodeHandler(Thread):
         if not self.is_alive():
             return
 
-        cluster = cluster.workers[str(event['group'])]
+        cluster = cluster.workers.get(str(event['group']))
         if not (cluster and cluster.leader and cluster.leader.name == event['leader'] and cluster.leader.conn_url):
             return
 

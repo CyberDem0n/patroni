@@ -123,6 +123,10 @@ class MockCursor(object):
                                  b'1\t0/40159C0\tno recovery target specified\n\n'
                                  b'2\t0/402DD98\tno recovery target specified\n\n'
                                  b'3\t0/403DD98\tno recovery target specified\n')]
+        elif sql.startswith('SELECT pg_catalog.citus_add_node'):
+            self.results = [(2,)]
+        elif sql.startswith('SELECT nodeid, groupid'):
+            self.results = [(1, 0, 'host1', 5432, 'primary'), (2, 1, 'host2', 5432, 'primary')]
         else:
             self.results = [(None, None, None, None, None, None, None, None, None, None)]
 
