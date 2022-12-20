@@ -845,6 +845,7 @@ class ConfigHandler(object):
 
     def get_server_parameters(self, config):
         parameters = config['parameters'].copy()
+        self._postgresql.citus_handler.adjust_postgres_gucs(parameters)
         listen_addresses, port = split_host_port(config['listen'], 5432)
         parameters.update(cluster_name=self._postgresql.scope, listen_addresses=listen_addresses, port=str(port))
         if config.get('synchronous_mode', False):
