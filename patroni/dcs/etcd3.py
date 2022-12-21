@@ -647,7 +647,7 @@ class Etcd3(AbstractEtcd):
 
     @property
     def cluster_prefix(self):
-        return self._base_path + '/' if self._citus_group == '0' else self.client_path('')
+        return self._base_path + '/' if self.is_citus_coordinator() else self.client_path('')
 
     @staticmethod
     def member(node):

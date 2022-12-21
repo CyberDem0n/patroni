@@ -20,7 +20,8 @@ from urllib3.exceptions import HTTPError
 from six.moves.http_client import HTTPException
 from threading import Condition, Lock, Thread
 
-from . import AbstractDCS, Cluster, ClusterConfig, Failover, Leader, Member, SyncState, TimelineHistory, citus_group_re
+from . import AbstractDCS, Cluster, ClusterConfig, Failover, Leader, Member, SyncState,\
+        TimelineHistory, CITUS_COORDINATOR_GROUP_ID, citus_group_re
 from ..exceptions import DCSError
 from ..utils import deep_compare, iter_response_objects, keepalive_socket_options,\
         Retry, RetryFailedError, tzutc, uri, USER_AGENT
@@ -918,7 +919,7 @@ class Kubernetes(AbstractDCS):
 
     def get_citus_coordinator(self):
         try:
-            return self.__load_cluster('0', self._cluster_loader)
+            return self.__load_cluster(str(CITUS_COORDINATOR_GROUP_ID), self._cluster_loader)
         except Exception as e:
             logger.error('Failed to load Citus coordinator cluster from Kubernetes: %r', e)
 

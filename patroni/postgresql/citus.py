@@ -5,6 +5,7 @@ from six.moves.urllib_parse import urlparse
 from threading import Condition, Event, Thread
 
 from .connection import Connection
+from ..dcs import CITUS_COORDINATOR_GROUP_ID
 from ..psycopg import connect, quote_ident
 
 logger = logging.getLogger(__name__)
@@ -77,7 +78,7 @@ class CitusHandler(Thread):
         return self._config['group']
 
     def is_coordinator(self):
-        return self.is_enabled() and self.group() == 0
+        return self.is_enabled() and self.group() == CITUS_COORDINATOR_GROUP_ID
 
     def is_worker(self):
         return self.is_enabled() and not self.is_coordinator()
@@ -146,7 +147,7 @@ class CitusHandler(Thread):
             if not self.is_alive():
                 self.start()
 
-        self.add_task('after_promote', 0, self._postgresql.connection_string)
+        self.add_task('after_promote', CITUS_COORDINATOR_GROUP_ID, self._postgresql.connection_string)
 
         for group, worker in cluster.workers.items():
             leader = worker.leader
@@ -174,7 +175,7 @@ class CitusHandler(Thread):
                 i = self.find_task_by_group(self._in_flight.group)
             else:
                 while True:
-                    i = self.find_task_by_group(0)  # set_coodinator
+                    i = self.find_task_by_group(CITUS_COORDINATOR_GROUP_ID)  # set_coodinator
                     if i is None and self._tasks:
                         i = 0
                     if i is None:
@@ -194,7 +195,7 @@ class CitusHandler(Thread):
             return i, task
 
     def update_node(self, task):
-        if task.group == 0:
+        if task.group == CITUS_COORDINATOR_GROUP_ID:
             return self.query("SELECT pg_catalog.citus_set_coordinator_host(%s, %s, 'primary', 'default')",
                               task.host, task.port)
 

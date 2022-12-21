@@ -20,6 +20,7 @@ from threading import Event, Lock
 from ..exceptions import PatroniFatalException
 from ..utils import deep_compare, parse_bool, uri
 
+CITUS_COORDINATOR_GROUP_ID = 0
 citus_group_re = re.compile('^(0|[1-9][0-9]*)$')
 slot_name_re = re.compile('^[a-z0-9_]{1,63}$')
 logger = logging.getLogger(__name__)
@@ -799,9 +800,13 @@ class AbstractDCS(object):
     def _bypass_caches(self):
         """Used only in zookeeper"""
 
+    def is_citus_coordinator(self):
+        return self._citus_group == str(CITUS_COORDINATOR_GROUP_ID)
+
     def get_citus_coordinator(self):
         try:
-            return self._load_cluster(self._base_path + '/0/', self._cluster_loader)
+            path = '{0}/{1}/'.format(self._base_path, CITUS_COORDINATOR_GROUP_ID)
+            return self._load_cluster(path, self._cluster_loader)
         except Exception as e:
             logger.error('Failed to load Citus coordinator cluster from %s: %r', self.__class__.__name__, e)
 
@@ -810,7 +815,8 @@ class AbstractDCS(object):
         if isinstance(groups, Cluster):  # Zookeeper could return a cached version
             cluster = groups
         else:
-            cluster = groups.pop(0, Cluster(None, None, None, None, [], None, None, None, None, None))
+            cluster = groups.pop(CITUS_COORDINATOR_GROUP_ID,
+                                 Cluster(None, None, None, None, [], None, None, None, None, None))
             cluster.workers.update(groups)
         return cluster
 
@@ -818,7 +824,7 @@ class AbstractDCS(object):
         if force:
             self._bypass_caches()
         try:
-            cluster = self._get_citus_cluster() if self._citus_group == '0'\
+            cluster = self._get_citus_cluster() if self.is_citus_coordinator()\
                 else self._load_cluster(self.client_path(''), self._cluster_loader)
         except Exception:
             self.reset_cluster()
