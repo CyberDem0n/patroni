@@ -15,6 +15,7 @@ import urllib3
 import yaml
 
 from collections import defaultdict
+from copy import deepcopy
 from urllib3 import Timeout
 from urllib3.exceptions import HTTPError
 from six.moves.http_client import HTTPException
@@ -692,7 +693,7 @@ class Kubernetes(AbstractDCS):
     _CITUS_LABEL = 'citus-group'
 
     def __init__(self, config):
-        self._labels = config['labels']
+        self._labels = deepcopy(config['labels'])
         self._labels[config.get('scope_label', 'cluster-name')] = config['scope']
         self._label_selector = ','.join('{0}={1}'.format(k, v) for k, v in self._labels.items())
         self._namespace = config.get('namespace') or 'default'
