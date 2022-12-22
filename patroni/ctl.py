@@ -672,6 +672,7 @@ def _do_failover_or_switchover(obj, action, cluster_name, group, master, candida
 
     dcs = get_dcs(obj, cluster_name, group)
     cluster = dcs.get_cluster()
+    click.echo('Current cluster topology')
     output_members(obj, cluster, cluster_name, group=group)
 
     if obj.get('citus') and group is None:
@@ -734,9 +735,6 @@ def _do_failover_or_switchover(obj, action, cluster_name, group, master, candida
     logging.debug(failover_value)
 
     # By now we have established that the leader exists and the candidate exists
-    click.echo('Current cluster topology')
-    output_members(obj, dcs.get_cluster(), cluster_name, group=group)
-
     if not force:
         demote_msg = ', demoting current master ' + master if master else ''
         if scheduled_at_str:
