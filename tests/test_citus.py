@@ -150,5 +150,9 @@ class TestCitus(BaseTestPostgresql):
                                                          'database': 'citus', 'plugin': 'pgoutput'}))
         self.assertTrue(self.c.ignore_replication_slot({'name': 'citus_shard_move_slot_1_2_3',
                                                         'type': 'logical', 'database': 'citus', 'plugin': 'pgoutput'}))
+        self.assertFalse(self.c.ignore_replication_slot({'name': 'citus_shard_move_slot_1_2_3',
+                                                         'type': 'logical', 'database': 'citus', 'plugin': 'citus'}))
+        self.assertFalse(self.c.ignore_replication_slot({'name': 'citus_shard_split_slot_1_2_3',
+                                                         'type': 'logical', 'database': 'citus', 'plugin': 'pgoutput'}))
         self.assertTrue(self.c.ignore_replication_slot({'name': 'citus_shard_split_slot_1_2_3',
-                                                        'type': 'logical', 'database': 'citus', 'plugin': 'pgoutput'}))
+                                                        'type': 'logical', 'database': 'citus', 'plugin': 'citus'}))

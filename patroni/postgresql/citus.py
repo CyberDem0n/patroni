@@ -379,7 +379,8 @@ class CitusHandler(Thread):
         parameters['wal_level'] = 'logical'
 
     def ignore_replication_slot(self, slot):
-        return self.is_enabled() and self._postgresql.is_leader()\
-            and slot['type'] == 'logical' and slot['plugin'] == 'pgoutput'\
-            and slot['database'] == self._config['database']\
-            and CITUS_SLOT_NAME_RE.match(slot['name'])
+        if self.is_enabled() and self._postgresql.is_leader() and\
+                slot['type'] == 'logical' and slot['database'] == self._config['database']:
+            m = CITUS_SLOT_NAME_RE.match(slot['name'])
+            return m and {'move': 'pgoutput', 'split': 'citus'}.get(m.group(1)) == slot['plugin']
+        return False
