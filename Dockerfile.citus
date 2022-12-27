@@ -163,7 +163,6 @@ RUN sed -i 's/env python/&3/' /patroni*.py \
     && sed -i 's|^#  cafile: .*$|  verify_client: required\n  cafile: /etc/ssl/certs/ssl-cert-snakeoil.pem|' postgres?.yml \
     && sed -i 's|^#  cacert: .*$|  cacert: /etc/ssl/certs/ssl-cert-snakeoil.pem|' postgres?.yml \
     && sed -i 's/^#  insecure: .*/  insecure: on/' postgres?.yml \
-    && sed -i 's/^#\(    synchronous_mode\): .*/\1: on/' postgres?.yml \
     # client cert for HAProxy to access Patroni REST API
     && if [ "$COMPRESS" = "true" ]; then chmod u+s /usr/bin/sudo; fi \
     && chmod +s /bin/ping \

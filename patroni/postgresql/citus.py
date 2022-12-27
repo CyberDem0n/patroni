@@ -1,4 +1,5 @@
 import logging
+import re
 import time
 
 from six.moves.urllib_parse import urlparse
@@ -8,6 +9,7 @@ from .connection import Connection
 from ..dcs import CITUS_COORDINATOR_GROUP_ID
 from ..psycopg import connect, quote_ident
 
+CITUS_SLOT_NAME_RE = re.compile(r'^citus_shard_(move|split)_slot(_[1-9][0-9]*){3}$')
 logger = logging.getLogger(__name__)
 
 
@@ -372,3 +374,12 @@ class CitusHandler(Thread):
         # if not explicitly set Citus overrides max_prepared_transactions to max_connections*2
         if parameters.get('max_prepared_transactions') == 0:
             parameters['max_prepared_transactions'] = parameters['max_connections'] * 2
+
+        # Resharding in Citus implemented using logical replication
+        parameters['wal_level'] = 'logical'
+
+    def ignore_replication_slot(self, slot):
+        return self.is_enabled() and self._postgresql.is_leader()\
+            and slot['type'] == 'logical' and slot['plugin'] == 'pgoutput'\
+            and slot['database'] == self._config['database']\
+            and CITUS_SLOT_NAME_RE.match(slot['name'])

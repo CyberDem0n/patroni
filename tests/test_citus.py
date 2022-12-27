@@ -138,3 +138,17 @@ class TestCitus(BaseTestPostgresql):
     @patch.object(CitusHandler, 'is_enabled', Mock(return_value=False))
     def test_bootstrap(self):
         self.c.bootstrap()
+
+    def test_ignore_replication_slot(self):
+        self.assertFalse(self.c.ignore_replication_slot({'name': 'foo', 'type': 'physical',
+                                                         'database': 'bar', 'plugin': 'wal2json'}))
+        self.assertFalse(self.c.ignore_replication_slot({'name': 'foo', 'type': 'logical',
+                                                         'database': 'bar', 'plugin': 'wal2json'}))
+        self.assertFalse(self.c.ignore_replication_slot({'name': 'foo', 'type': 'logical',
+                                                         'database': 'bar', 'plugin': 'pgoutput'}))
+        self.assertFalse(self.c.ignore_replication_slot({'name': 'foo', 'type': 'logical',
+                                                         'database': 'citus', 'plugin': 'pgoutput'}))
+        self.assertTrue(self.c.ignore_replication_slot({'name': 'citus_shard_move_slot_1_2_3',
+                                                        'type': 'logical', 'database': 'citus', 'plugin': 'pgoutput'}))
+        self.assertTrue(self.c.ignore_replication_slot({'name': 'citus_shard_split_slot_1_2_3',
+                                                        'type': 'logical', 'database': 'citus', 'plugin': 'pgoutput'}))
