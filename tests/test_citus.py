@@ -134,6 +134,7 @@ class TestCitus(BaseTestPostgresql):
         self.c.adjust_postgres_gucs(parameters)
         self.assertEqual(parameters['max_prepared_transactions'], 202)
         self.assertEqual(parameters['shared_preload_libraries'], 'citus,foo,bar')
+        self.assertEqual(parameters['wal_level'], 'logical')
 
     @patch.object(CitusHandler, 'is_enabled', Mock(return_value=False))
     def test_bootstrap(self):
