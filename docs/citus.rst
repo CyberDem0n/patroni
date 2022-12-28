@@ -3,7 +3,7 @@
 Citus support
 =============
 
-Patroni makes it extremely simple deploying `Multi-Node Citus`__ clusters.
+Patroni makes it extremely simple to deploy `Multi-Node Citus`__ clusters.
 
 __ https://docs.citusdata.com/en/stable/installation/multi_node.html
 
@@ -12,13 +12,13 @@ TL;DR
 
 There are only a few simple rules you need to follow:
 
-1. The Citus extension must be available on all nodes.
-2. The cluster name (``scope``) must be the same for all Citus nodes!
-3. The superuser credentials must be the same on coordinator and all worker
+1. Citus extension must be available on all nodes.
+2. Cluster name (``scope``) must be the same for all Citus nodes!
+3. Superuser credentials must be the same on coordinator and all worker
    nodes, and ``pg_hba.conf`` should allow superuser access between all nodes.
 4. :ref:`REST API <restapi_settings>` access should be allowed from worker
    nodes to the coordinator. E.g., credentials should be the same and if
-   configured client certificates from worker nodes must be accepted by the
+   configured, client certificates from worker nodes must be accepted by the
    coordinator.
 5. Add the following section to the ``patroni.yaml``:
 
@@ -31,7 +31,7 @@ There are only a few simple rules you need to follow:
 
 After that you just need to start Patroni and it will handle the rest:
 
-1. The ``citus`` extension will be automatically added to the ``shared_preload_libraries``.
+1. ``citus`` extension will be automatically added to ``shared_preload_libraries``.
 2. If ``max_prepared_transactions`` isn't explicitly set in the global
    :ref:`dynamic configuration <dynamic_configuration>` Patroni will
    automatically set it to ``2*max_connections``.
@@ -42,7 +42,7 @@ After that you just need to start Patroni and it will handle the rest:
 5. The coordinator primary node will automatically discover worker primary
    nodes and add them to the ``pg_dist_node`` table using the
    ``citus_add_node()`` function.
-6. Patroni will also maintain ``pg_dist_node`` in case if failover/switchover
+6. Patroni will also maintain ``pg_dist_node`` in case failover/switchover
    on the coordinator or worker clusters occurs.
 
 patronictl
@@ -103,7 +103,7 @@ Citus worker switchover
 -----------------------
 
 When a switchover is orchestrated for a Citus worker node, Citus offers the
-opportunity to make the switchover close to transparent to the application.
+opportunity to make the switchover close to transparent for an application.
 Because the application connects to the coordinator, which in turn connects to
 the worker nodes, then it is possible with Citus to `pause` the SQL traffic on
 the coordinator for the shards hosted on a worker node. The switchover then
@@ -192,7 +192,7 @@ Patroni clusters logically grouped together::
     /service/batman/1/members/m4
     ...
 
-Such an approach was choosen because for most DCS it becomes possible to fetch
+Such an approach was chosen because for most DCS it becomes possible to fetch
 the entire Citus cluster with a single recursive read request. Only Citus
 coordinator nodes are reading the whole tree, because they have to discover
 worker nodes. Worker nodes are reading only the subtree for their own group and
@@ -308,8 +308,8 @@ A couple of examples of Patroni configuration using Pods environment variables:
 As you may noticed, both examples have ``citus-group`` label set. This label
 allows Patroni to identify object as belonging to a certain Citus group. In
 addition to that, there is also ``PATRONI_CITUS_GROUP`` environment variable,
-which has the same value as the ``citus-group`` label. When Patroni will create
-new Kubernetes objects ConfigMaps or Endpoints, it will automatically put the
+which has the same value as the ``citus-group`` label. When Patroni creates
+new Kubernetes objects ConfigMaps or Endpoints, it automatically puts the
 ``citus-group: ${env.PATRONI_CITUS_GROUP}`` label on them:
 
 .. code:: YAML
