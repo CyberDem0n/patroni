@@ -3,14 +3,6 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def clamp(value, min=None, max=None):
-    if min is not None and value < min:
-        value = min
-    if max is not None and value > max:
-        value = max
-    return value
-
-
 class QuorumError(Exception):
     pass
 
@@ -41,13 +33,19 @@ class QuorumStateResolver(object):
     To keep the invariant the rule to follow is that when increasing `numsync` or `quorum`, we need to perform the
     increasing operation first. When decreasing either, the decreasing operation needs to be performed later.
 
-    For simplicity all sync members are considered equal. In Patroni the leader is actually special in that the last
-    known leader is always guaranteed to have latest state. This leads to suboptimal number of transitions when
-    increasing replication factor and quorum at the same time. If quorum must include leader, which happens when
-    transitioning to sync replication, i.e. `quorum, voters = 1, {'leader'}`, then the special leader semantics
-    mean that we could set `numsync, sync = 2, {'leader', 's1', 's2'}` in one step without worrying of the case that
-    s1, s2 have latest xlog, but not leader. The benefit seems too small to warrant adding any complexity.
+    Order of adding or removing nodes from sync and voters depends on the state of synchronous_standby_names:
+    When adding new nodes:
+        if there is only on node in sync (synchronous_standby_names is empty):
+            add new nodes first to sync and than to voters
+        else:
+            add new nodes first to voters and than to sync
+    When removing nodes:
+        if sync will contain just a single value after removal (synchronous_standby_names becomes empty):
+            first remove nodes from voters and than from sync
+        else:
+            first remove nodes from sync and than from voters
     """
+
     def __init__(self, quorum, voters, numsync, sync, active, sync_wanted):
         self.quorum = quorum
         self.voters = set(voters)
@@ -57,7 +55,7 @@ class QuorumStateResolver(object):
         self.sync_wanted = sync_wanted
 
     def check_invariants(self):
-        if self.quorum and not (len(self.voters | self.sync) < self.quorum + self.numsync):
+        if len(self.voters) > 1 and not (len(self.voters | self.sync) < self.quorum + self.numsync):
             raise QuorumError("Quorum and sync not guaranteed to overlap: nodes %d >= quorum %d + sync %d" %
                               (len(self.voters | self.sync), self.quorum, self.numsync))
         if not (self.voters <= self.sync or self.sync <= self.voters):
@@ -66,7 +64,7 @@ class QuorumStateResolver(object):
 
     def quorum_update(self, quorum, voters):
         if quorum < 1:
-            raise QuorumError("Quorum %d < 0 of (%s)" % (quorum, voters))
+            raise QuorumError("Quorum %d < 1 of (%s)" % (quorum, voters))
         self.quorum = quorum
         self.voters = voters
         self.check_invariants()
@@ -74,6 +72,8 @@ class QuorumStateResolver(object):
         return 'quorum', self.quorum, self.voters
 
     def sync_update(self, numsync, sync):
+        if numsync < 1:
+            raise QuorumError("Sync %d < 1 of (%s)" % (numsync, sync))
         self.numsync = numsync
         self.sync = sync
         self.check_invariants()
@@ -92,7 +92,11 @@ class QuorumStateResolver(object):
     def _generate_transitions(self):
         logger.debug("Quorum state: quorum %s, voters %s, numsync %s, sync %s, active %s, sync_wanted %s",
                      self.quorum, self.voters, self.numsync, self.sync, self.active, self.sync_wanted)
-        self.check_invariants()
+        try:
+            self.check_invariants()
+        except QuorumError as e:
+            logger.warning('%s', e)
+            yield self.quorum_update(len(self.sync) + 1 - self.numsync, self.sync)
 
         # Handle non steady state cases
         if self.sync < self.voters:
@@ -128,16 +132,12 @@ class QuorumStateResolver(object):
         assert self.voters == self.sync
 
         safety_margin = self.quorum + self.numsync - len(self.voters | self.sync)
-        if safety_margin > 1:
-            logger.debug("Case 3: replication factor is bigger than needed")
-            # Case 3: quorum or replication factor is bigger than needed. In the middle of changing replication factor.
-            if self.numsync > self.sync_wanted:
-                # Reduce replication factor
-                new_sync = clamp(self.sync_wanted, min=len(self.voters) - self.quorum + 1, max=len(self.sync))
-                yield self.sync_update(new_sync, self.sync)
-            elif len(self.voters) > self.numsync:
-                # Reduce quorum
-                yield self.quorum_update(len(self.voters) + 1 - self.numsync, self.voters)
+        if safety_margin > 1:  # In the middle of changing replication factor.
+            logger.debug("Case 3: quorum ot replication factor is bigger than needed")
+
+            # If we were increasing replication factor the below line will finish transition
+            # In case if it was decrease operation we rollback quorum and let remaining code resolve transition
+            yield self.quorum_update(len(self.voters) + 1 - self.numsync, self.voters)
 
         # We are in a steady state point. Find if desired state is different and act accordingly.
 
@@ -150,8 +150,12 @@ class QuorumStateResolver(object):
             if can_reduce_quorum_by:
                 # Pick nodes to remove by sorted order to provide deterministic behavior for tests
                 remove = set(sorted(to_remove, reverse=True)[:can_reduce_quorum_by])
-                yield self.sync_update(self.numsync, self.sync - remove)
-                yield self.quorum_update(self.quorum - can_reduce_quorum_by, self.voters - remove)
+                sync = self.sync - remove
+                # we can safely increase numsync if requested
+                numsync = min(self.sync_wanted, len(sync) + 1) if self.sync_wanted > self.numsync else self.numsync
+                yield self.sync_update(numsync, sync)
+                voters = self.voters - remove
+                yield self.quorum_update(len(voters) + 1 - self.numsync, voters)
                 to_remove &= self.sync
             if to_remove:
                 assert self.quorum == 1
@@ -163,25 +167,32 @@ class QuorumStateResolver(object):
         if to_add:
             # First get to requested replication factor
             logger.debug("Adding nodes: %s", to_add)
-            increase_numsync_by = self.sync_wanted - self.numsync
-            if increase_numsync_by:
-                add = set(sorted(to_add)[:increase_numsync_by])
-                yield self.sync_update(self.numsync + len(add), self.sync | add)
-                yield self.quorum_update(self.quorum, self.voters | add)
+            sync_wanted = min(self.sync_wanted, len(self.sync | to_add))
+            increase_numsync_by = sync_wanted - self.numsync
+            if increase_numsync_by > 0:
+                if len(self.sync) == 1:  # there is only the leader
+                    add = to_add         # and it is safe to add all nodes at once
+                else:
+                    add = set(sorted(to_add)[:increase_numsync_by])
+                    increase_numsync_by = len(add)
+                yield self.sync_update(self.numsync + increase_numsync_by, self.sync | add)
+                voters = self.voters | add
+                yield self.quorum_update(len(voters) + 1 - sync_wanted, voters)
                 to_add -= self.sync
             if to_add:
-                yield self.quorum_update(self.quorum + len(to_add), self.voters | to_add)
-                yield self.sync_update(self.numsync, self.sync | to_add)
+                voters = self.voters | to_add
+                yield self.quorum_update(len(voters) + 1 - sync_wanted, voters)
+                yield self.sync_update(sync_wanted, self.sync | to_add)
 
         # Apply requested replication factor change
-        sync_increase = clamp(self.sync_wanted - self.numsync, min=2 - self.numsync, max=len(self.sync) - self.numsync)
+        sync_increase = min(self.sync_wanted, len(self.sync)) - self.numsync
         if sync_increase > 0:
             # Increase replication factor
             logger.debug("Increasing replication factor to %s", self.numsync + sync_increase)
             yield self.sync_update(self.numsync + sync_increase, self.sync)
-            yield self.quorum_update(self.quorum - sync_increase, self.voters)
+            yield self.quorum_update(len(self.voters) + 1 - self.numsync, self.voters)
         elif sync_increase < 0:
             # Reduce replication factor
             logger.debug("Reducing replication factor to %s", self.numsync + sync_increase)
-            yield self.quorum_update(self.quorum - sync_increase, self.voters)
+            yield self.quorum_update(len(self.voters) + 1 - self.numsync - sync_increase, self.voters)
             yield self.sync_update(self.numsync + sync_increase, self.sync)
