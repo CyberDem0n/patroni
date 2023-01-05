@@ -117,7 +117,7 @@ def install_postgres():
     for f in os.listdir(bin_dir):
         chmod_755(os.path.join(bin_dir, f))
     if platform == 'osx':
-        subprocess.call(['brew', 'install', 'postgresql@{0}'.format(int(float(version)))])
+        subprocess.call(['brew', 'install', 'postgresql@{0}'.format(int(version.split('.')[0]))])
     subprocess.call(['pgsql/bin/postgres', '-V'])
     return 0
 
