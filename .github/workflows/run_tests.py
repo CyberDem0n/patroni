@@ -43,6 +43,7 @@ def main():
     if ret != 0:
         if subprocess.call('grep . features/output/*_failed/*postgres?.*', shell=True) != 0:
             subprocess.call('grep . features/output/*/*postgres?.*', shell=True)
+            subprocess.call('grep . features/output/*', shell=True)
         return 1
     return 0
 
