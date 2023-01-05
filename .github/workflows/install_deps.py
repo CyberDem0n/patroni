@@ -111,7 +111,7 @@ def install_postgres():
     version = os.environ.get('PGVERSION', '15.1-1')
     platform = {'darwin': 'osx', 'win32': 'windows-x64', 'cygwin': 'windows-x64'}[sys.platform]
     if platform == 'osx':
-        return subprocess.call(['brew', 'install', 'postgresql@{0}'.format(version.split('.')[0])])
+        return subprocess.call(['brew', 'install', 'expect', 'postgresql@{0}'.format(version.split('.')[0])])
     name = 'postgresql-{0}-{1}-binaries.zip'.format(version, platform)
     get_file('http://get.enterprisedb.com/postgresql/' + name, name)
     unzip_all(name)
