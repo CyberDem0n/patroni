@@ -96,7 +96,7 @@ def unpack(archive, name):
 
 
 def install_etcd():
-    version = os.environ.get('ETCDVERSION', '3.3.13')
+    version = os.environ.get('ETCDVERSION', '3.4.23')
     platform = {'linux2': 'linux', 'win32': 'windows', 'cygwin': 'windows'}.get(sys.platform, sys.platform)
     dirname = 'etcd-v{0}-{1}-amd64'.format(version, platform)
     ext = 'tar.gz' if platform == 'linux' else 'zip'
@@ -127,6 +127,7 @@ def main():
         if sys.platform.startswith('linux'):
             r = install_packages(what)
         else:
+            subprocess.call(['ls', '-al', '/usr/local/opt/'])
             r = install_postgres()
 
         if r == 0 and what.startswith('etcd'):
