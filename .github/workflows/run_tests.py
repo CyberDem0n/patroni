@@ -32,9 +32,10 @@ def main():
         if sys.platform == 'darwin':
             version = os.environ.get('PGVERSION', '15.1-1')
             path = '/usr/local/opt/postgresql@{0}/bin:.'.format(version.split('.')[0])
+            unbuffer = ['unbuffer']
         else:
             path = os.path.abspath(os.path.join('pgsql', 'bin'))
-        unbuffer = []
+            unbuffer = []
     env['PATH'] = path + os.pathsep + env['PATH']
     env['DCS'] = what
     if what == 'kubernetes':
