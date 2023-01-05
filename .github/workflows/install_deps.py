@@ -117,8 +117,7 @@ def install_postgres():
     for f in os.listdir(bin_dir):
         chmod_755(os.path.join(bin_dir, f))
     if platform == 'osx':
-        subprocess.call(['brew', 'install', 'zstd'])
-        subprocess.call(['ls', '-al', 'pgsql/lib'])
+        subprocess.call(['brew', 'install', 'postgresql@{0}'.format(int(float(version)))])
     subprocess.call(['pgsql/bin/postgres', '-V'])
     return 0
 
@@ -130,8 +129,8 @@ def main():
         if sys.platform.startswith('linux'):
             r = install_packages(what)
         else:
-            subprocess.call(['ls', '-al', '/usr/local/opt/'])
             r = install_postgres()
+            subprocess.call(['ls', '-al', '/usr/local/opt/'])
 
         if r == 0 and what.startswith('etcd'):
             r = install_etcd()
