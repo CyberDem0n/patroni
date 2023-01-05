@@ -29,9 +29,11 @@ def main():
         path = '/usr/lib/postgresql/{0}/bin:.'.format(version)
         unbuffer = ['timeout', '900', 'unbuffer']
     else:
-        path = os.path.abspath(os.path.join('pgsql', 'bin'))
         if sys.platform == 'darwin':
-            path += ':.'
+            version = os.environ.get('PGVERSION', '15.1-1')
+            path = '/usr/local/opt/postgresql@{0}/bin:.'.format(version.split('.')[0])
+        else:
+            path = os.path.abspath(os.path.join('pgsql', 'bin'))
         unbuffer = []
     env['PATH'] = path + os.pathsep + env['PATH']
     env['DCS'] = what
