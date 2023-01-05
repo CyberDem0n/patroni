@@ -118,6 +118,7 @@ def install_postgres():
         chmod_755(os.path.join(bin_dir, f))
     if platform == 'osx':
         subprocess.call(['brew', 'install', 'zstd'])
+        subprocess.call(['ls', '-al', 'pgsql/lib'])
     subprocess.call(['pgsql/bin/postgres', '-V'])
     return 0
 
