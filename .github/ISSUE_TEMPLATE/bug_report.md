@@ -1,48 +1,96 @@
----
-name: Bug report
-about: Create a report to help us improve
-title: ''
-labels: ''
-assignees: ''
+name: Bug Report
+description: Create a report to help us improve
+labels:
+- bug
+body:
+- type: markdown
+  attributes:
+    value: |
+      If you have a question please post it on channel `#patroni <https://postgresteam.slack.com/archives/C9XPYG92A>`__ in the `PostgreSQL Slack <https://postgresteam.slack.com/>`__
+      Before reporting a bug please make sure to **reproduce it with the latest Patroni version**!
+      Please fill the form below and provide as much information as possible.
+      Not doing so may result in your bug not being addressed in a timely manner.
 
----
+- type: textarea
+  id: problem
+  attributes:
+    label: What happened?
+  validations:
+    required: true
 
-**Describe the bug**
-A clear and concise description of what the bug is.
+- type: textarea
+  id: repro
+  attributes:
+    label: How can we reproduce it (as minimally and precisely as possible)?
+  validations:
+    required: true
 
-**To Reproduce**
-Steps to reproduce the behavior:
+- type: textarea
+  id: expected
+  attributes:
+    label: What did you expect to happen?
+  validations:
+    required: true
 
-**Expected behavior**
-A clear and concise description of what you expected to happen.
+- type: textarea
+  id: environment
+  attributes:
+    label: Patroni/PostgreSQL/DCS version (please run commands below)
+    value: |
+      -   Patroni version:
+      -   PostgreSQL version:
+      -   DCS (and its version):
+  validations:
+    required: true
 
-**Screenshots**
-If applicable, add screenshots to help explain your problem.
+- type: textarea
+  id: patroniConfig
+  attributes:
+    label: Patroni configuration file
+    description: Please copy and paste Patroni configuration file here. This will be automatically formatted into code, so no need for backticks.
+    render: yaml
+  validations:
+    required: true
 
-**Environment**
--   Patroni version:
--   PostgreSQL version:
--   DCS (and its version):
+- type: textarea
+  id: globalConfig
+  attributes:
+    label: patronictl show-config
+    description: Please copy and paste `patronictl show-config` output here. This will be automatically formatted into code, so no need for backticks.
+    render: yaml
+  validations:
+    required: true
 
-**Patroni configuration file**
-```
-Please copy&paste your Patroni configuration file here
-```
+- type: textarea
+  id: patroniLogs
+  attributes:
+    label: Patroni log files
+    description: Please copy and paste any relevant Patroni log output. This will be automatically formatted into code, so no need for backticks.
+    render: shell
+  validations:
+    required: true
 
-**patronictl show-config**
-```
-Please copy&paste the output of "patronictl show-config" command here
-```
+- type: textarea
+  id: postgresLogs
+  attributes:
+    label: PostgreSQL log files
+    description: Please copy and paste any relevant PostgreSQL log output. This will be automatically formatted into code, so no need for backticks.
+    render: shell
+  validations:
+    required: true
 
-**Have you checked Patroni logs?**
-Please provide a snippet of Patroni log files here
+- type: checkboxes
+  id: issueSearch
+  attributes:
+    label: Have you tried to use GitHub issue search?
+    description: Maybe there is already a similar issue solved.
+    options:
+      - label: Yes
+  validations:
+    required: true
 
-**Have you checked PostgreSQL logs?**
-Please provide a snippet here
-
-**Have you tried to use GitHub issue search?**
-Maybe there is already a similar issue solved.
-
-
-**Additional context**
-Add any other context about the problem here.
+- type: textarea
+  id: additional
+  attributes:
+    label: Anything else we need to know?
+    description: Add any other context about the problem here.
