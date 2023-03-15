@@ -1,5 +1,7 @@
 import logging
 
+from typing import Optional, Set, Tuple, Union
+
 logger = logging.getLogger(__name__)
 
 
@@ -8,8 +10,7 @@ class QuorumError(Exception):
 
 
 class QuorumStateResolver(object):
-    """
-    Calculates a list of state transition tuples of the form `('sync'/'quorum',number,set_of_names)`
+    """Calculates a list of state transition tuples of the form `('sync'/'quorum'/'restart',leader,number,set_of_names)`
 
     Synchronous replication state is set in two places. PostgreSQL configuration sets how many and which nodes are
     needed for a commit to succeed, abbreviated as `numsync` and `sync` set here. DCS contains information about how
@@ -36,27 +37,38 @@ class QuorumStateResolver(object):
     Order of adding or removing nodes from sync and voters depends on the state of synchronous_standby_names:
     When adding new nodes:
         if sync (synchronous_standby_names) is empty:
-            add new nodes first to sync and than to voters
+            add new nodes first to sync and than to voters when numsync_confimed > 0
         else:
             add new nodes first to voters and than to sync
     When removing nodes:
         if sync (synchronous_standby_names) will become empty after removal:
             first remove nodes from voters and than from sync
         else:
-            first remove nodes from sync and than from voters
-    """
+            first remove nodes from sync and than from voters. make voters empty if numsync_confimed == 0"""
 
-    def __init__(self, leader, quorum, voters, numsync, sync, active, sync_wanted, leader_wanted=None):
-        self.leader = leader
-        self.quorum = quorum                 # The number of nodes we need to check when doing leader race
-        self.voters = set(voters)            # List of nodes we need to check (both stored in the /sync key)
-        self.numsync = numsync               # The number of sync nodes in synchronous_standby_names
-        self.sync = set(sync)                # List of nodes in synchronous_standby_names
-        self.active = active                 # List of active nodes from pg_stat_replication
-        self.sync_wanted = sync_wanted       # The desired number of sync nodes
-        self.leader_wanted = leader_wanted or leader
+    def __init__(self, leader: str, quorum: int, voters: Union[Set[str], Tuple[str, ...], list[str]],
+                 numsync: int, sync: Union[Set[str], Tuple[str, ...], list[str]], numsync_confimed: int,
+                 active: Union[Set[str], Tuple[str, ...], list[str]], sync_wanted: int, leader_wanted: str) -> None:
+        self.leader = leader            # The leader according to the `/sync` key
+        self.quorum = quorum            # The number of nodes we need to check when doing leader race
+        self.voters = set(voters)       # List of nodes we need to check (both stored in the /sync key)
+        self.numsync = numsync          # The number of sync nodes in synchronous_standby_names
+        self.sync = set(sync)           # List of nodes in synchronous_standby_names
+        # The number of nodes that are confirmed to reach safe LSN after adding them to `synchronous_standby_names`.
+        # We don't list them because it is known that they are always included into active.
+        self.numsync_confimed = numsync_confimed
+        self.active = set(active)       # List of active nodes from `pg_stat_replication`
+        self.sync_wanted = sync_wanted  # The desired number of sync nodes
+        self.leader_wanted = leader_wanted or leader  # The desired leader
 
-    def check_invariants(self):
+    def check_invariants(self) -> None:
+        """Checks invatiant of synchronous_standby_names and /sync key in DCS.
+
+        We need to verify that subset of nodes that can acknowledge a commit overlaps
+        with any subset of nodes that can achieve quorum to promote a new leader.
+
+        :raises QuorumError: in case of broken state"""
+
         if self.voters and not (len(self.voters | self.sync) <= self.quorum + self.numsync):
             raise QuorumError("Quorum and sync not guaranteed to overlap: nodes %d >= quorum %d + sync %d" %
                               (len(self.voters | self.sync), self.quorum, self.numsync))
@@ -64,20 +76,58 @@ class QuorumStateResolver(object):
             raise QuorumError("Mismatched sets: quorum only=%s sync only=%s" %
                               (self.voters - self.sync, self.sync - self.voters))
 
-    def quorum_update(self, quorum, voters, leader=None):
+    def quorum_update(self, quorum: int, voters: Set[str],
+                      leader: Optional[str] = None) -> Tuple[str, str, int, Set[str]]:
+        """Updates quorum, voters and optionally leader fields
+
+        :returns: a tuple(type, leader, quorum, voters) with the new quorum state,
+                  where type could be 'quorum' or 'restart'. The later means that
+                  quorum could not be updated with the current input data
+                  and the `QuorumStateResolver` should be restarted.
+        :raises QuorumError: in case of invalid data or if invariant after transition could not be satisfied"""
+
         if quorum < 0:
             raise QuorumError("Quorum %d < 0 of (%s)" % (quorum, voters))
-        if leader is not None:
+        if quorum > 0 and quorum >= len(voters):
+            raise QuorumError("Quorum %d >= N of (%s)" % (quorum, voters))
+
+        old_leader = self.leader
+        if leader is not None:  # Change of leader was requested
             self.leader = leader
+        elif self.numsync_confimed == 0:
+            # If there are no nodes that known to caught up with the primary we want to reset quorum/votes in /sync key
+            quorum = 0
+            voters = set()
+        else:
+            # It could be that the number of nodes that are known to catch up with the primary is below desired numsync.
+            # We want to increase quorum to guaranty that the sync node will be found during the leader race.
+            quorum += max(self.numsync - self.numsync_confimed, 0)
+            if not voters:
+                # We want to reset numsync_confimed to 0 if voters will become empty after next update of /sync key
+                self.numsync_confimed = 0
+
+        if (self.leader, quorum, voters) == (old_leader, self.quorum, self.voters):
+            # If transition produces no change of leader/quorum/voters we want to give a hint to
+            # the caller to fetch the new state from the database and restart QuorumStateResolver.
+            return 'restart', self.leader, self.quorum, self.voters
+
         self.quorum = quorum
         self.voters = voters
         self.check_invariants()
         logger.debug('quorum %s %s %s', self.leader, self.quorum, self.voters)
         return 'quorum', self.leader, self.quorum, self.voters
 
-    def sync_update(self, numsync, sync):
+    def sync_update(self, numsync: int, sync: Set[str]) -> Tuple[str, str, int, Set[str]]:
+        """Updates numsync and sync fields.
+
+        :returns: a tuple('sync', leader, numsync, sync) with the new state of synchronous_standby_names
+        :raises QuorumError: in case of invalid data ot if invariant after transition could not be satisfied"""
+
         if numsync < 0:
             raise QuorumError("Sync %d < 0 of (%s)" % (numsync, sync))
+        if numsync > 0 and numsync > len(sync):
+            raise QuorumError("Sync %s > N of (%s)" % (numsync, sync))
+
         self.numsync = numsync
         self.sync = sync
         self.check_invariants()
@@ -92,10 +142,20 @@ class QuorumStateResolver(object):
             if next_transition and cur_transition[0] == next_transition[0]:
                 continue
             yield cur_transition
+            if cur_transition[0] == 'restart':
+                break
 
     def _generate_transitions(self):
-        logger.debug("Quorum state: leader %s quorum %s, voters %s, numsync %s, sync %s, active %s, sync_wanted %s leader_wanted %s",
-                     self.leader, self.quorum, self.voters, self.numsync, self.sync, self.active, self.sync_wanted, self.leader_wanted)
+        logger.debug("Quorum state: leader %s quorum %s, voters %s, numsync %s, sync %s, "
+                     "numsync_confimed %s, active %s, sync_wanted %s leader_wanted %s",
+                     self.leader, self.quorum, self.voters, self.numsync, self.sync,
+                     self.numsync_confimed, self.active, self.sync_wanted, self.leader_wanted)
+
+        # numsync_confimed could be 0 after restart/failover we use intersection of voters and sync as a fallback
+        if self.numsync_confimed == 0:
+            self.numsync_confimed = len(self.voters & self.sync)
+            logger.debug('numsync_confimed=0, adjusting it to %d', self.numsync_confimed)
+
         try:
             self.check_invariants()
         except QuorumError as e:
@@ -126,9 +186,8 @@ class QuorumStateResolver(object):
             # Add to quorum voters nodes that are already synced and active
             add_to_quorum = (self.sync - self.voters) & self.active
             if add_to_quorum:
-                yield self.quorum_update(
-                        quorum=self.quorum,
-                        voters=self.voters | add_to_quorum)
+                voters = self.voters | add_to_quorum
+                yield self.quorum_update(len(voters) - self.numsync, voters)
             # Remove from sync nodes that are dead
             remove_from_sync = self.sync - self.voters
             if remove_from_sync:
@@ -139,7 +198,7 @@ class QuorumStateResolver(object):
         # After handling these two cases quorum and sync must match.
         assert self.voters == self.sync
 
-        safety_margin = self.quorum + self.numsync - len(self.voters | self.sync)
+        safety_margin = self.quorum + min(self.numsync, self.numsync_confimed) - len(self.voters | self.sync)
         if safety_margin > 0:  # In the middle of changing replication factor.
             logger.debug("Case 3: quorum ot replication factor is bigger than needed")
 
@@ -202,5 +261,6 @@ class QuorumStateResolver(object):
         elif sync_increase < 0:
             # Reduce replication factor
             logger.debug("Reducing replication factor to %s", self.numsync + sync_increase)
-            yield self.quorum_update(len(self.voters) - self.numsync - sync_increase, self.voters)
+            if self.quorum - sync_increase < len(self.voters):
+                yield self.quorum_update(len(self.voters) - self.numsync - sync_increase, self.voters)
             yield self.sync_update(self.numsync + sync_increase, self.sync)
