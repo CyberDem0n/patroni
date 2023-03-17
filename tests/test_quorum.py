@@ -8,11 +8,11 @@ from patroni.quorum import QuorumStateResolver, QuorumError
 class QuorumTest(unittest.TestCase):
 
     def check_state_transitions(self, leader: str, quorum: int, voters: Set[str], numsync: int, sync: Set[str],
-                                numsync_confimed: int, active: Set[str], sync_wanted: int, leader_wanted: str,
+                                numsync_confirmed: int, active: Set[str], sync_wanted: int, leader_wanted: str,
                                 expected: list[Tuple[str, str, int, Set[str]]]) -> None:
         kwargs = {
             'leader': leader, 'quorum': quorum, 'voters': voters,
-            'numsync': numsync, 'sync': sync, 'numsync_confimed': numsync_confimed,
+            'numsync': numsync, 'sync': sync, 'numsync_confirmed': numsync_confirmed,
             'active': active, 'sync_wanted': sync_wanted, 'leader_wanted': leader_wanted
         }
         result = list(QuorumStateResolver(**kwargs))
@@ -32,25 +32,25 @@ class QuorumTest(unittest.TestCase):
 
         # Add node
         self.check_state_transitions(leader=leader, quorum=0, voters=set(),
-                                     numsync=0, sync=set(), numsync_confimed=0, active=set('b'),
+                                     numsync=0, sync=set(), numsync_confirmed=0, active=set('b'),
                                      sync_wanted=2, leader_wanted=leader, expected=[
                                         ('sync', leader, 1, set('b')),
                                         ('restart', leader, 0, set()),
                                     ])
         self.check_state_transitions(leader=leader, quorum=0, voters=set(),
-                                     numsync=1, sync=set('b'), numsync_confimed=1, active=set('b'),
+                                     numsync=1, sync=set('b'), numsync_confirmed=1, active=set('b'),
                                      sync_wanted=2, leader_wanted=leader, expected=[
                                         ('quorum', leader, 0, set('b'))
                                     ])
 
         self.check_state_transitions(leader=leader, quorum=0, voters=set(),
-                                     numsync=0, sync=set(), numsync_confimed=0, active=set('bcde'),
+                                     numsync=0, sync=set(), numsync_confirmed=0, active=set('bcde'),
                                      sync_wanted=2, leader_wanted=leader, expected=[
                                         ('sync', leader, 2, set('bcde')),
                                         ('restart', leader, 0, set()),
                                     ])
         self.check_state_transitions(leader=leader, quorum=0, voters=set(),
-                                     numsync=2, sync=set('bcde'), numsync_confimed=1, active=set('bcde'),
+                                     numsync=2, sync=set('bcde'), numsync_confirmed=1, active=set('bcde'),
                                      sync_wanted=2, leader_wanted=leader, expected=[
                                         ('quorum', leader, 3, set('bcde')),
                                     ])
@@ -61,12 +61,12 @@ class QuorumTest(unittest.TestCase):
 
         # Active set matches state
         self.check_state_transitions(leader=leader, quorum=0, voters=set('b'),
-                                     numsync=1, sync=set('b'), numsync_confimed=1, active=set('b'),
+                                     numsync=1, sync=set('b'), numsync_confirmed=1, active=set('b'),
                                      sync_wanted=2, leader_wanted=leader, expected=[])
 
         # Add node by increasing quorum
         self.check_state_transitions(leader=leader, quorum=0, voters=set('b'),
-                                     numsync=1, sync=set('b'), numsync_confimed=1, active=set('bc'),
+                                     numsync=1, sync=set('b'), numsync_confirmed=1, active=set('bc'),
                                      sync_wanted=1, leader_wanted=leader, expected=[
                                         ('quorum', leader, 1, set('bc')),
                                         ('sync', leader, 1, set('bc')),
@@ -74,21 +74,21 @@ class QuorumTest(unittest.TestCase):
 
         # Add node by increasing sync
         self.check_state_transitions(leader=leader, quorum=0, voters=set('b'),
-                                     numsync=1, sync=set('b'), numsync_confimed=1, active=set('bc'),
+                                     numsync=1, sync=set('b'), numsync_confirmed=1, active=set('bc'),
                                      sync_wanted=2, leader_wanted=leader, expected=[
                                         ('sync', leader, 2, set('bc')),
                                         ('quorum', leader, 1, set('bc')),
                                     ])
         # Reduce quorum after added node caught up
         self.check_state_transitions(leader=leader, quorum=1, voters=set('bc'),
-                                     numsync=2, sync=set('bc'), numsync_confimed=2, active=set('bc'),
+                                     numsync=2, sync=set('bc'), numsync_confirmed=2, active=set('bc'),
                                      sync_wanted=2, leader_wanted=leader, expected=[
                                         ('quorum', leader, 0, set('bc')),
                                     ])
 
         # Add multiple nodes by increasing both sync and quorum
         self.check_state_transitions(leader=leader, quorum=0, voters=set('b'),
-                                     numsync=1, sync=set('b'), numsync_confimed=1, active=set('bcde'),
+                                     numsync=1, sync=set('b'), numsync_confirmed=1, active=set('bcde'),
                                      sync_wanted=2, leader_wanted=leader, expected=[
                                         ('sync', leader, 2, set('bc')),
                                         ('quorum', leader, 3, set('bcde')),
@@ -96,14 +96,14 @@ class QuorumTest(unittest.TestCase):
                                     ])
         # Reduce quorum after added nodes caught up
         self.check_state_transitions(leader=leader, quorum=3, voters=set('bcde'),
-                                     numsync=2, sync=set('bcde'), numsync_confimed=3, active=set('bcde'),
+                                     numsync=2, sync=set('bcde'), numsync_confirmed=3, active=set('bcde'),
                                      sync_wanted=2, leader_wanted=leader, expected=[
                                         ('quorum', leader, 2, set('bcde')),
                                     ])
 
         # Primary is alone
         self.check_state_transitions(leader=leader, quorum=0, voters=set('b'),
-                                     numsync=1, sync=set('b'), numsync_confimed=0, active=set(),
+                                     numsync=1, sync=set('b'), numsync_confirmed=0, active=set(),
                                      sync_wanted=1, leader_wanted=leader, expected=[
                                         ('quorum', leader, 0, set()),
                                         ('sync', leader, 0, set()),
@@ -111,7 +111,7 @@ class QuorumTest(unittest.TestCase):
 
         # Swap out sync replica
         self.check_state_transitions(leader=leader, quorum=0, voters=set('b'),
-                                     numsync=1, sync=set('b'), numsync_confimed=0, active=set('c'),
+                                     numsync=1, sync=set('b'), numsync_confirmed=0, active=set('c'),
                                      sync_wanted=1, leader_wanted=leader, expected=[
                                         ('quorum', leader, 0, set()),
                                         ('sync', leader, 1, set('c')),
@@ -119,7 +119,7 @@ class QuorumTest(unittest.TestCase):
                                     ])
         # Update quorum when added node caught up
         self.check_state_transitions(leader=leader, quorum=0, voters=set(),
-                                     numsync=1, sync=set('c'), numsync_confimed=1, active=set('c'),
+                                     numsync=1, sync=set('c'), numsync_confirmed=1, active=set('c'),
                                      sync_wanted=1, leader_wanted=leader, expected=[
                                         ('quorum', leader, 0, set('c')),
                                     ])
@@ -130,35 +130,35 @@ class QuorumTest(unittest.TestCase):
 
         # Node c went away, transition back to 2 node cluster
         self.check_state_transitions(leader=leader, quorum=0, voters=set('b'),
-                                     numsync=2, sync=set('bc'), numsync_confimed=1, active=set('b'),
+                                     numsync=2, sync=set('bc'), numsync_confirmed=1, active=set('b'),
                                      sync_wanted=2, leader_wanted=leader, expected=[
                                         ('sync', leader, 1, set('b')),
                                     ])
 
         # Node c is available transition to larger quorum set, but not yet caught up.
         self.check_state_transitions(leader=leader, quorum=0, voters=set('b'),
-                                     numsync=2, sync=set('bc'), numsync_confimed=1, active=set('bc'),
+                                     numsync=2, sync=set('bc'), numsync_confirmed=1, active=set('bc'),
                                      sync_wanted=2, leader_wanted=leader, expected=[
                                         ('quorum', leader, 1, set('bc')),
                                     ])
 
         # Add in a new node at the same time, but node c didn't caught up yet
         self.check_state_transitions(leader=leader, quorum=0, voters=set('b'),
-                                     numsync=2, sync=set('bc'), numsync_confimed=1, active=set('bcd'),
+                                     numsync=2, sync=set('bc'), numsync_confirmed=1, active=set('bcd'),
                                      sync_wanted=2, leader_wanted=leader, expected=[
                                         ('quorum', leader, 2, set('bcd')),
                                         ('sync', leader, 2, set('bcd')),
                                     ])
         # All sync nodes caught up, reduce quorum
         self.check_state_transitions(leader=leader, quorum=2, voters=set('bcd'),
-                                     numsync=2, sync=set('bcd'), numsync_confimed=3, active=set('bcd'),
+                                     numsync=2, sync=set('bcd'), numsync_confirmed=3, active=set('bcd'),
                                      sync_wanted=2, leader_wanted=leader, expected=[
                                         ('quorum', leader, 1, set('bcd')),
                                     ])
 
         # Change replication factor at the same time
         self.check_state_transitions(leader=leader, quorum=0, voters=set('b'),
-                                     numsync=2, sync=set('bc'), numsync_confimed=1, active=set('bc'),
+                                     numsync=2, sync=set('bc'), numsync_confirmed=1, active=set('bc'),
                                      sync_wanted=1, leader_wanted=leader, expected=[
                                         ('quorum', leader, 1, set('bc')),
                                         ('sync', leader, 1, set('bc')),
@@ -170,21 +170,21 @@ class QuorumTest(unittest.TestCase):
 
         # Node c went away, transition back to 2 node cluster
         self.check_state_transitions(leader=leader, quorum=1, voters=set('bc'),
-                                     numsync=1, sync=set('b'), numsync_confimed=1, active=set('b'),
+                                     numsync=1, sync=set('b'), numsync_confirmed=1, active=set('b'),
                                      sync_wanted=1, leader_wanted=leader, expected=[
                                         ('quorum', leader, 0, set('b')),
                                     ])
 
         # Node c is available transition to larger quorum set.
         self.check_state_transitions(leader=leader, quorum=1, voters=set('bc'),
-                                     numsync=1, sync=set('b'), numsync_confimed=1, active=set('bc'),
+                                     numsync=1, sync=set('b'), numsync_confirmed=1, active=set('bc'),
                                      sync_wanted=1, leader_wanted=leader, expected=[
                                         ('sync', leader, 1, set('bc')),
                                     ])
 
         # Add in a new node at the same time
         self.check_state_transitions(leader=leader, quorum=1, voters=set('bc'),
-                                     numsync=1, sync=set('b'), numsync_confimed=1, active=set('bcd'),
+                                     numsync=1, sync=set('b'), numsync_confirmed=1, active=set('bcd'),
                                      sync_wanted=1, leader_wanted=leader, expected=[
                                         ('sync', leader, 1, set('bc')),
                                         ('quorum', leader, 2, set('bcd')),
@@ -193,13 +193,13 @@ class QuorumTest(unittest.TestCase):
 
         # Convert to a fully synced cluster
         self.check_state_transitions(leader=leader, quorum=1, voters=set('bc'),
-                                     numsync=1, sync=set('b'), numsync_confimed=1, active=set('bc'),
+                                     numsync=1, sync=set('b'), numsync_confirmed=1, active=set('bc'),
                                      sync_wanted=2, leader_wanted=leader, expected=[
                                         ('sync', leader, 2, set('bc')),
                                     ])
         # Reduce quorum after all nodes caught up
         self.check_state_transitions(leader=leader, quorum=1, voters=set('bc'),
-                                     numsync=2, sync=set('bc'), numsync_confimed=2, active=set('bc'),
+                                     numsync=2, sync=set('bc'), numsync_confirmed=2, active=set('bc'),
                                      sync_wanted=2, leader_wanted=leader, expected=[
                                         ('quorum', leader, 0, set('bc')),
                                     ])
@@ -209,13 +209,13 @@ class QuorumTest(unittest.TestCase):
 
         # remove nodes
         self.check_state_transitions(leader=leader, quorum=2, voters=set('bcde'),
-                                     numsync=2, sync=set('bcde'), numsync_confimed=2, active=set('bc'),
+                                     numsync=2, sync=set('bcde'), numsync_confirmed=2, active=set('bc'),
                                      sync_wanted=2, leader_wanted=leader, expected=[
                                         ('sync', leader, 2, set('bc')),
                                         ('quorum', leader, 0, set('bc')),
                                     ])
         self.check_state_transitions(leader=leader, quorum=2, voters=set('bcde'),
-                                     numsync=2, sync=set('bcde'), numsync_confimed=3, active=set('bcd'),
+                                     numsync=2, sync=set('bcde'), numsync_confirmed=3, active=set('bcd'),
                                      sync_wanted=2, leader_wanted=leader, expected=[
                                         ('sync', leader, 2, set('bcd')),
                                         ('quorum', leader, 1, set('bcd')),
@@ -223,7 +223,7 @@ class QuorumTest(unittest.TestCase):
 
         # remove nodes and decrease sync
         self.check_state_transitions(leader=leader, quorum=2, voters=set('bcde'),
-                                     numsync=2, sync=set('bcde'), numsync_confimed=2, active=set('bc'),
+                                     numsync=2, sync=set('bcde'), numsync_confirmed=2, active=set('bc'),
                                      sync_wanted=1, leader_wanted=leader, expected=[
                                         ('sync', leader, 2, set('bc')),
                                         ('quorum', leader, 1, set('bc')),
@@ -232,20 +232,20 @@ class QuorumTest(unittest.TestCase):
 
         # Increase replication factor and decrease quorum
         self.check_state_transitions(leader=leader, quorum=2, voters=set('bcde'),
-                                     numsync=2, sync=set('bcde'), numsync_confimed=2, active=set('bcde'),
+                                     numsync=2, sync=set('bcde'), numsync_confirmed=2, active=set('bcde'),
                                      sync_wanted=3, leader_wanted=leader, expected=[
                                         ('sync', leader, 3, set('bcde')),
                                     ])
         # decrease quorum after more nodes caught up
         self.check_state_transitions(leader=leader, quorum=2, voters=set('bcde'),
-                                     numsync=3, sync=set('bcde'), numsync_confimed=3, active=set('bcde'),
+                                     numsync=3, sync=set('bcde'), numsync_confirmed=3, active=set('bcde'),
                                      sync_wanted=3, leader_wanted=leader, expected=[
                                         ('quorum', leader, 1, set('bcde')),
                                     ])
 
         # Add node with decreasing sync and increasing quorum
         self.check_state_transitions(leader=leader, quorum=2, voters=set('bcde'),
-                                     numsync=2, sync=set('bcde'), numsync_confimed=2, active=set('bcdef'),
+                                     numsync=2, sync=set('bcde'), numsync_confirmed=2, active=set('bcdef'),
                                      sync_wanted=1, leader_wanted=leader, expected=[
                                         # increase quorum by 2, 1 for added node and another for reduced sync
                                         ('quorum', leader, 4, set('bcdef')),
@@ -255,7 +255,7 @@ class QuorumTest(unittest.TestCase):
 
         # Remove node with increasing sync and decreasing quorum
         self.check_state_transitions(leader=leader, quorum=2, voters=set('bcde'),
-                                     numsync=2, sync=set('bcde'), numsync_confimed=2, active=set('bcd'),
+                                     numsync=2, sync=set('bcde'), numsync_confirmed=2, active=set('bcd'),
                                      sync_wanted=3, leader_wanted=leader, expected=[
                                         # node e removed from sync wth replication factor increase
                                         ('sync', leader, 3, set('bcd')),
@@ -270,7 +270,7 @@ class QuorumTest(unittest.TestCase):
         # and let situation resolve. Node d ssn=ANY 1 (b c)
         leader = 'd'
         self.check_state_transitions(leader='a', quorum=1, voters=set('bc'),
-                                     numsync=2, sync=set('abc'), numsync_confimed=0, active=set('bc'),
+                                     numsync=2, sync=set('abc'), numsync_confirmed=0, active=set('bc'),
                                      sync_wanted=1, leader_wanted=leader, expected=[
                                         ('quorum', leader, 1, set('abc')),  # Set ourselves to be a member of the quorum
                                         ('sync', leader, 2, set('bc')),     # Remove a from being synced to.
@@ -283,7 +283,7 @@ class QuorumTest(unittest.TestCase):
 
         # Main invariant is not satisfied, system is in an unsafe state
         resolver = QuorumStateResolver(leader=leader, quorum=0, voters=set('bc'),
-                                       numsync=1, sync=set('bc'), numsync_confimed=1,
+                                       numsync=1, sync=set('bc'), numsync_confirmed=1,
                                        active=set('bc'), sync_wanted=1, leader_wanted=leader)
         self.assertRaises(QuorumError, resolver.check_invariants)
         self.assertEqual(list(resolver), [
@@ -292,7 +292,7 @@ class QuorumTest(unittest.TestCase):
 
         # Quorum and sync states mismatched, somebody other than Patroni modified system state
         resolver = QuorumStateResolver(leader=leader, quorum=1, voters=set('bc'),
-                                       numsync=2, sync=set('bd'), numsync_confimed=1,
+                                       numsync=2, sync=set('bd'), numsync_confirmed=1,
                                        active=set('bd'), sync_wanted=1, leader_wanted=leader)
         self.assertRaises(QuorumError, resolver.check_invariants)
         self.assertEqual(list(resolver), [
@@ -304,25 +304,25 @@ class QuorumTest(unittest.TestCase):
         leader = 'a'
 
         self.check_state_transitions(leader=leader, quorum=2, voters=set('bcdef'),
-                                     numsync=4, sync=set('bcdef'), numsync_confimed=3, active=set('bcdef'),
+                                     numsync=4, sync=set('bcdef'), numsync_confirmed=3, active=set('bcdef'),
                                      sync_wanted=2, leader_wanted=leader, expected=[
                                         ('quorum', leader, 4, set('bcdef')),  # Adjust quorum requirements
                                         ('sync', leader, 2, set('bcdef')),    # Reduce synchronization
                                     ])
         self.check_state_transitions(leader=leader, quorum=4, voters=set('bcdef'),
-                                     numsync=2, sync=set('bcdef'), numsync_confimed=4, active=set('bcdef'),
+                                     numsync=2, sync=set('bcdef'), numsync_confirmed=4, active=set('bcdef'),
                                      sync_wanted=2, leader_wanted=leader, expected=[
                                         ('quorum', leader, 3, set('bcdef')),  # Adjust quorum requirements
                                     ])
 
     def test_quorum_update(self):
         resolver = QuorumStateResolver(leader='a', quorum=1, voters=set('bc'), numsync=1, sync=set('bc'),
-                                       numsync_confimed=1, active=set('bc'), sync_wanted=1, leader_wanted='a')
+                                       numsync_confirmed=1, active=set('bc'), sync_wanted=1, leader_wanted='a')
         self.assertRaises(QuorumError, list, resolver.quorum_update(-1, set()))
         self.assertRaises(QuorumError, list, resolver.quorum_update(1, set()))
 
     def test_sync_update(self):
         resolver = QuorumStateResolver(leader='a', quorum=1, voters=set('bc'), numsync=1, sync=set('bc'),
-                                       numsync_confimed=1, active=set('bc'), sync_wanted=1, leader_wanted='a')
+                                       numsync_confirmed=1, active=set('bc'), sync_wanted=1, leader_wanted='a')
         self.assertRaises(QuorumError, list, resolver.sync_update(-1, set()))
         self.assertRaises(QuorumError, list, resolver.sync_update(1, set()))

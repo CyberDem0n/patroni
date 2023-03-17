@@ -37,17 +37,17 @@ class QuorumStateResolver(object):
     Order of adding or removing nodes from sync and voters depends on the state of synchronous_standby_names:
     When adding new nodes:
         if sync (synchronous_standby_names) is empty:
-            add new nodes first to sync and than to voters when numsync_confimed > 0
+            add new nodes first to sync and than to voters when numsync_confirmed > 0
         else:
             add new nodes first to voters and than to sync
     When removing nodes:
         if sync (synchronous_standby_names) will become empty after removal:
             first remove nodes from voters and than from sync
         else:
-            first remove nodes from sync and than from voters. make voters empty if numsync_confimed == 0"""
+            first remove nodes from sync and than from voters. make voters empty if numsync_confirmed == 0"""
 
     def __init__(self, leader: str, quorum: int, voters: Union[Set[str], Tuple[str, ...], list[str]],
-                 numsync: int, sync: Union[Set[str], Tuple[str, ...], list[str]], numsync_confimed: int,
+                 numsync: int, sync: Union[Set[str], Tuple[str, ...], list[str]], numsync_confirmed: int,
                  active: Union[Set[str], Tuple[str, ...], list[str]], sync_wanted: int, leader_wanted: str) -> None:
         self.leader = leader            # The leader according to the `/sync` key
         self.quorum = quorum            # The number of nodes we need to check when doing leader race
@@ -56,7 +56,7 @@ class QuorumStateResolver(object):
         self.sync = set(sync)           # List of nodes in synchronous_standby_names
         # The number of nodes that are confirmed to reach safe LSN after adding them to `synchronous_standby_names`.
         # We don't list them because it is known that they are always included into active.
-        self.numsync_confimed = numsync_confimed
+        self.numsync_confirmed = numsync_confirmed
         self.active = set(active)       # List of active nodes from `pg_stat_replication`
         self.sync_wanted = sync_wanted  # The desired number of sync nodes
         self.leader_wanted = leader_wanted or leader  # The desired leader
@@ -94,17 +94,17 @@ class QuorumStateResolver(object):
         old_leader = self.leader
         if leader is not None:  # Change of leader was requested
             self.leader = leader
-        elif self.numsync_confimed == 0:
+        elif self.numsync_confirmed == 0:
             # If there are no nodes that known to caught up with the primary we want to reset quorum/votes in /sync key
             quorum = 0
             voters = set()
         else:
             # It could be that the number of nodes that are known to catch up with the primary is below desired numsync.
             # We want to increase quorum to guaranty that the sync node will be found during the leader race.
-            quorum += max(self.numsync - self.numsync_confimed, 0)
+            quorum += max(self.numsync - self.numsync_confirmed, 0)
             if not voters:
-                # We want to reset numsync_confimed to 0 if voters will become empty after next update of /sync key
-                self.numsync_confimed = 0
+                # We want to reset numsync_confirmed to 0 if voters will become empty after next update of /sync key
+                self.numsync_confirmed = 0
 
         if (self.leader, quorum, voters) == (old_leader, self.quorum, self.voters):
             if self.voters:
@@ -149,20 +149,19 @@ class QuorumStateResolver(object):
 
     def _generate_transitions(self):
         logger.debug("Quorum state: leader %s quorum %s, voters %s, numsync %s, sync %s, "
-                     "numsync_confimed %s, active %s, sync_wanted %s leader_wanted %s",
+                     "numsync_confirmed %s, active %s, sync_wanted %s leader_wanted %s",
                      self.leader, self.quorum, self.voters, self.numsync, self.sync,
-                     self.numsync_confimed, self.active, self.sync_wanted, self.leader_wanted)
-
-        # numsync_confimed could be 0 after restart/failover we use intersection of voters and sync as a fallback
-        if self.numsync_confimed == 0:
-            self.numsync_confimed = len(self.voters & self.sync)
-            logger.debug('numsync_confimed=0, adjusting it to %d', self.numsync_confimed)
-
+                     self.numsync_confirmed, self.active, self.sync_wanted, self.leader_wanted)
         try:
             self.check_invariants()
         except QuorumError as e:
             logger.warning('%s', e)
             yield from self.quorum_update(len(self.sync) - self.numsync, self.sync)
+
+        # numsync_confirmed could be 0 after restart/failover, we will calculate it from quorum
+        if self.numsync_confirmed == 0 and self.sync:
+            self.numsync_confirmed = len(self.voters & self.sync) - self.quorum
+            logger.debug('numsync_confirmed=0, adjusting it to %d', self.numsync_confirmed)
 
         # If leader changes we need to add the old leader to quorum (voters)
         if self.leader_wanted != self.leader:
@@ -200,7 +199,7 @@ class QuorumStateResolver(object):
         # After handling these two cases quorum and sync must match.
         assert self.voters == self.sync
 
-        safety_margin = self.quorum + min(self.numsync, self.numsync_confimed) - len(self.voters | self.sync)
+        safety_margin = self.quorum + min(self.numsync, self.numsync_confirmed) - len(self.voters | self.sync)
         if safety_margin > 0:  # In the middle of changing replication factor.
             if self.numsync > self.sync_wanted:
                 logger.debug('Case 3: replication factor is bigger than needed')
@@ -210,7 +209,7 @@ class QuorumStateResolver(object):
                 yield from self.quorum_update(len(self.sync) - self.numsync, self.voters)
         else:
             safety_margin = self.quorum + self.numsync - len(self.voters | self.sync)
-            if self.numsync == self.sync_wanted and safety_margin > 0 and self.numsync > self.numsync_confimed:
+            if self.numsync == self.sync_wanted and safety_margin > 0 and self.numsync > self.numsync_confirmed:
                 yield from self.quorum_update(len(self.sync) - self.numsync, self.voters)
 
         # We are in a steady state point. Find if desired state is different and act accordingly.
