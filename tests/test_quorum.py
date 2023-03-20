@@ -66,10 +66,10 @@ class QuorumTest(unittest.TestCase):
 
         # Add node by increasing quorum
         self.check_state_transitions(leader=leader, quorum=0, voters=set('b'),
-                                     numsync=1, sync=set('b'), numsync_confirmed=1, active=set('bc'),
+                                     numsync=1, sync=set('b'), numsync_confirmed=1, active=set('BC'),
                                      sync_wanted=1, leader_wanted=leader, expected=[
-                                        ('quorum', leader, 1, set('bc')),
-                                        ('sync', leader, 1, set('bc')),
+                                        ('quorum', leader, 1, set('bC')),
+                                        ('sync', leader, 1, set('bC')),
                                     ])
 
         # Add node by increasing sync
@@ -88,11 +88,11 @@ class QuorumTest(unittest.TestCase):
 
         # Add multiple nodes by increasing both sync and quorum
         self.check_state_transitions(leader=leader, quorum=0, voters=set('b'),
-                                     numsync=1, sync=set('b'), numsync_confirmed=1, active=set('bcde'),
+                                     numsync=1, sync=set('b'), numsync_confirmed=1, active=set('BCdE'),
                                      sync_wanted=2, leader_wanted=leader, expected=[
-                                        ('sync', leader, 2, set('bc')),
-                                        ('quorum', leader, 3, set('bcde')),
-                                        ('sync', leader, 2, set('bcde')),
+                                        ('sync', leader, 2, set('bC')),
+                                        ('quorum', leader, 3, set('bCdE')),
+                                        ('sync', leader, 2, set('bCdE')),
                                     ])
         # Reduce quorum after added nodes caught up
         self.check_state_transitions(leader=leader, quorum=3, voters=set('bcde'),
@@ -299,6 +299,7 @@ class QuorumTest(unittest.TestCase):
             ('quorum', leader, 1, set('bd')),
             ('sync', leader, 1, set('bd')),
         ])
+        self.assertTrue(repr(resolver.sync).startswith('<CaseInsensitiveSet'))
 
     def test_sync_high_quorum_low_safety_margin_high(self):
         leader = 'a'

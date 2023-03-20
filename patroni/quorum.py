@@ -1,8 +1,38 @@
 import logging
 
-from typing import Iterator, Optional, Set, Tuple, Union
+from collections.abc import MutableSet
+from typing import Iterable, Iterator, Optional, Set, Tuple
 
 logger = logging.getLogger(__name__)
+
+
+class CaseInsensitiveSet(MutableSet):
+
+    def __init__(self, values: Optional[Iterable[str]] = None) -> None:
+        self._values = {}
+        for v in values or ():
+            self.add(v)
+
+    def __repr__(self) -> str:
+        return '<{0}{1} at {2:x}>'.format(type(self).__name__, tuple(self._values.values()), id(self))
+
+    def __str__(self) -> str:
+        return str(set(self._values.values()))
+
+    def __contains__(self, value: str) -> bool:
+        return value.casefold() in self._values
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._values.values())
+
+    def __len__(self) -> int:
+        return len(self._values)
+
+    def add(self, value: str) -> None:
+        self._values[value.casefold()] = value
+
+    def discard(self, value: str) -> None:
+        self._values.pop(value.casefold(), None)
 
 
 class QuorumError(Exception):
@@ -46,19 +76,19 @@ class QuorumStateResolver(object):
         else:
             first remove nodes from sync and than from voters. make voters empty if numsync_confirmed == 0"""
 
-    def __init__(self, leader: str, quorum: int, voters: Union[Set[str], Tuple[str, ...], list[str]],
-                 numsync: int, sync: Union[Set[str], Tuple[str, ...], list[str]], numsync_confirmed: int,
-                 active: Union[Set[str], Tuple[str, ...], list[str]], sync_wanted: int, leader_wanted: str) -> None:
-        self.leader = leader            # The leader according to the `/sync` key
-        self.quorum = quorum            # The number of nodes we need to check when doing leader race
-        self.voters = set(voters)       # List of nodes we need to check (both stored in the /sync key)
-        self.numsync = numsync          # The number of sync nodes in synchronous_standby_names
-        self.sync = set(sync)           # List of nodes in synchronous_standby_names
+    def __init__(self, leader: str, quorum: int, voters: Iterable[str],
+                 numsync: int, sync: Iterable[str], numsync_confirmed: int,
+                 active: Iterable[str], sync_wanted: int, leader_wanted: str) -> None:
+        self.leader = leader                          # The leader according to the `/sync` key
+        self.quorum = quorum                          # The number of nodes we need to check when doing leader race
+        self.voters = CaseInsensitiveSet(voters)      # Set of nodes we need to check (both stored in the /sync key)
+        self.numsync = numsync                        # The number of sync nodes in synchronous_standby_names
+        self.sync = CaseInsensitiveSet(sync)          # Set of nodes in synchronous_standby_names
         # The number of nodes that are confirmed to reach safe LSN after adding them to `synchronous_standby_names`.
         # We don't list them because it is known that they are always included into active.
         self.numsync_confirmed = numsync_confirmed
-        self.active = set(active)       # List of active nodes from `pg_stat_replication`
-        self.sync_wanted = sync_wanted  # The desired number of sync nodes
+        self.active = CaseInsensitiveSet(active)      # Set of active nodes from `pg_stat_replication`
+        self.sync_wanted = sync_wanted                # The desired number of sync nodes
         self.leader_wanted = leader_wanted or leader  # The desired leader
 
     def check_invariants(self) -> None:
@@ -97,7 +127,7 @@ class QuorumStateResolver(object):
         elif self.numsync_confirmed == 0:
             # If there are no nodes that known to caught up with the primary we want to reset quorum/votes in /sync key
             quorum = 0
-            voters = set()
+            voters = CaseInsensitiveSet()
         else:
             # It could be that the number of nodes that are known to catch up with the primary is below desired numsync.
             # We want to increase quorum to guaranty that the sync node will be found during the leader race.
@@ -165,7 +195,8 @@ class QuorumStateResolver(object):
 
         # If leader changes we need to add the old leader to quorum (voters)
         if self.leader_wanted != self.leader:
-            yield from self.quorum_update(self.quorum, self.voters | set([self.leader]), self.leader_wanted)
+            voters = self.voters | CaseInsensitiveSet([self.leader])
+            yield from self.quorum_update(self.quorum, voters, self.leader_wanted)
 
         # Handle non steady state cases
         if self.sync < self.voters:
@@ -178,7 +209,7 @@ class QuorumStateResolver(object):
                     quorum=len(self.voters) - len(remove_from_quorum) - self.numsync,
                     voters=self.voters - remove_from_quorum)
             # Start syncing to nodes that are in quorum and alive
-            add_to_sync = self.voters - self.sync
+            add_to_sync = (self.voters & self.active) - self.sync
             if add_to_sync:
                 yield from self.sync_update(self.numsync, self.sync | add_to_sync)
         elif self.sync > self.voters:
@@ -222,7 +253,7 @@ class QuorumStateResolver(object):
             # If we can reduce quorum size try to do so first
             if can_reduce_quorum_by:
                 # Pick nodes to remove by sorted order to provide deterministic behavior for tests
-                remove = set(sorted(to_remove, reverse=True)[:can_reduce_quorum_by])
+                remove = CaseInsensitiveSet(sorted(to_remove, reverse=True)[:can_reduce_quorum_by])
                 sync = self.sync - remove
                 # when removing nodes from sync we can safely increase numsync if requested
                 numsync = min(self.sync_wanted, len(sync)) if self.sync_wanted > self.numsync else self.numsync
@@ -244,7 +275,7 @@ class QuorumStateResolver(object):
             increase_numsync_by = sync_wanted - self.numsync
             if increase_numsync_by > 0:
                 if self.sync:
-                    add = set(sorted(to_add)[:increase_numsync_by])
+                    add = CaseInsensitiveSet(sorted(to_add)[:increase_numsync_by])
                     increase_numsync_by = len(add)
                 else:  # there is only the leader
                     add = to_add  # and it is safe to add all nodes at once if sync is empty
