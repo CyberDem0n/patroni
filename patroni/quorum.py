@@ -1,7 +1,7 @@
 import logging
 
 from collections.abc import MutableSet
-from typing import Iterable, Iterator, Optional, Set, Tuple
+from typing import Iterable, Iterator, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -106,8 +106,8 @@ class QuorumStateResolver(object):
             raise QuorumError("Mismatched sets: quorum only=%s sync only=%s" %
                               (self.voters - self.sync, self.sync - self.voters))
 
-    def quorum_update(self, quorum: int, voters: Set[str],
-                      leader: Optional[str] = None) -> Iterator[Tuple[str, str, int, Set[str]]]:
+    def quorum_update(self, quorum: int, voters: CaseInsensitiveSet,
+                      leader: Optional[str] = None) -> Iterator[Tuple[str, str, int, CaseInsensitiveSet]]:
         """Updates quorum, voters and optionally leader fields
 
         :rtype: Iterator[tuple(type, leader, quorum, voters)] with the new quorum state,
@@ -149,7 +149,7 @@ class QuorumStateResolver(object):
         logger.debug('quorum %s %s %s', self.leader, self.quorum, self.voters)
         yield 'quorum', self.leader, self.quorum, self.voters
 
-    def sync_update(self, numsync: int, sync: Set[str]) -> Iterator[Tuple[str, str, int, Set[str]]]:
+    def sync_update(self, numsync: int, sync: CaseInsensitiveSet) -> Iterator[Tuple[str, str, int, CaseInsensitiveSet]]:
         """Updates numsync and sync fields.
 
         :rtype: Iterator[tuple('sync', leader, numsync, sync)] with the new state of synchronous_standby_names
@@ -166,7 +166,7 @@ class QuorumStateResolver(object):
         logger.debug('sync %s %s %s', self.leader, self.numsync, self.sync)
         yield 'sync', self.leader, self.numsync, self.sync
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[Tuple[str, str, int, CaseInsensitiveSet]]:
         transitions = list(self._generate_transitions())
         # Merge 2 transitions of the same type to a single one. This is always safe because skipping the first
         # transition is equivalent to no one observing the intermediate state.
@@ -177,7 +177,7 @@ class QuorumStateResolver(object):
             if cur_transition[0] == 'restart':
                 break
 
-    def _generate_transitions(self):
+    def _generate_transitions(self) -> Iterator[Tuple[str, str, int, CaseInsensitiveSet]]:
         logger.debug("Quorum state: leader %s quorum %s, voters %s, numsync %s, sync %s, "
                      "numsync_confirmed %s, active %s, sync_wanted %s leader_wanted %s",
                      self.leader, self.quorum, self.voters, self.numsync, self.sync,
@@ -195,7 +195,7 @@ class QuorumStateResolver(object):
 
         # If leader changes we need to add the old leader to quorum (voters)
         if self.leader_wanted != self.leader:
-            voters = self.voters | CaseInsensitiveSet([self.leader])
+            voters = CaseInsensitiveSet(self.voters | CaseInsensitiveSet([self.leader]))
             yield from self.quorum_update(self.quorum, voters, self.leader_wanted)
 
         # Handle non steady state cases
@@ -207,25 +207,25 @@ class QuorumStateResolver(object):
             if remove_from_quorum:
                 yield from self.quorum_update(
                     quorum=len(self.voters) - len(remove_from_quorum) - self.numsync,
-                    voters=self.voters - remove_from_quorum)
+                    voters=CaseInsensitiveSet(self.voters - remove_from_quorum))
             # Start syncing to nodes that are in quorum and alive
             add_to_sync = (self.voters & self.active) - self.sync
             if add_to_sync:
-                yield from self.sync_update(self.numsync, self.sync | add_to_sync)
+                yield from self.sync_update(self.numsync, CaseInsensitiveSet(self.sync | add_to_sync))
         elif self.sync > self.voters:
             logger.debug("Case 2: synchronous_standby_names superset of DCS state")
             # Case 2: sync is superset of quorum nodes. In the middle of changing replication factor.
             # Add to quorum voters nodes that are already synced and active
             add_to_quorum = (self.sync - self.voters) & self.active
             if add_to_quorum:
-                voters = self.voters | add_to_quorum
+                voters = CaseInsensitiveSet(self.voters | add_to_quorum)
                 yield from self.quorum_update(len(voters) - self.numsync, voters)
             # Remove from sync nodes that are dead
             remove_from_sync = self.sync - self.voters
             if remove_from_sync:
                 yield from self.sync_update(
                         numsync=min(self.sync_wanted, len(self.sync) - len(remove_from_sync)),
-                        sync=self.sync - remove_from_sync)
+                        sync=CaseInsensitiveSet(self.sync - remove_from_sync))
 
         # After handling these two cases quorum and sync must match.
         assert self.voters == self.sync
@@ -254,17 +254,17 @@ class QuorumStateResolver(object):
             if can_reduce_quorum_by:
                 # Pick nodes to remove by sorted order to provide deterministic behavior for tests
                 remove = CaseInsensitiveSet(sorted(to_remove, reverse=True)[:can_reduce_quorum_by])
-                sync = self.sync - remove
+                sync = CaseInsensitiveSet(self.sync - remove)
                 # when removing nodes from sync we can safely increase numsync if requested
                 numsync = min(self.sync_wanted, len(sync)) if self.sync_wanted > self.numsync else self.numsync
                 yield from self.sync_update(numsync, sync)
-                voters = self.voters - remove
+                voters = CaseInsensitiveSet(self.voters - remove)
                 yield from self.quorum_update(len(voters) - self.numsync, voters)
                 to_remove &= self.sync
             if to_remove:
                 assert self.quorum == 0
-                yield from self.quorum_update(self.quorum, self.voters - to_remove)
-                yield from self.sync_update(self.numsync - len(to_remove), self.sync - to_remove)
+                yield from self.quorum_update(self.quorum, CaseInsensitiveSet(self.voters - to_remove))
+                yield from self.sync_update(self.numsync - len(to_remove), CaseInsensitiveSet(self.sync - to_remove))
 
         # If any new nodes, join them to quorum
         to_add = self.active - self.sync
@@ -279,14 +279,14 @@ class QuorumStateResolver(object):
                     increase_numsync_by = len(add)
                 else:  # there is only the leader
                     add = to_add  # and it is safe to add all nodes at once if sync is empty
-                yield from self.sync_update(self.numsync + increase_numsync_by, self.sync | add)
-                voters = self.voters | add
+                yield from self.sync_update(self.numsync + increase_numsync_by, CaseInsensitiveSet(self.sync | add))
+                voters = CaseInsensitiveSet(self.voters | add)
                 yield from self.quorum_update(len(voters) - sync_wanted, voters)
                 to_add -= self.sync
             if to_add:
-                voters = self.voters | to_add
+                voters = CaseInsensitiveSet(self.voters | to_add)
                 yield from self.quorum_update(len(voters) - sync_wanted, voters)
-                yield from self.sync_update(sync_wanted, self.sync | to_add)
+                yield from self.sync_update(sync_wanted, CaseInsensitiveSet(self.sync | to_add))
 
         # Apply requested replication factor change
         sync_increase = min(self.sync_wanted, len(self.sync)) - self.numsync
