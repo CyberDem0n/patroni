@@ -18,7 +18,7 @@ from typing import Any, Dict, Iterable, List, Optional, Union
 from urllib.parse import urlparse, urlunparse, parse_qsl
 
 from ..exceptions import PatroniFatalException
-from ..utils import deep_compare, parse_bool, uri
+from ..utils import deep_compare, check_quorum_commit_mode, check_synchronous_mode, parse_bool, uri
 
 CITUS_COORDINATOR_GROUP_ID = 0
 citus_group_re = re.compile('^(0|[1-9][0-9]*)$')
@@ -504,8 +504,17 @@ class Cluster(namedtuple('Cluster', 'initialize,config,leader,last_lsn,members,'
     def is_paused(self):
         return self.check_mode('pause')
 
-    def is_synchronous_mode(self):
-        return self.check_mode('synchronous_mode')
+    def synchronous_mode(self):
+        """:returns: current value of synchronous_mode or None if it is missing"""
+        return self.config and self.config.data.get('synchronous_mode')
+
+    def is_synchronous_mode(self) -> bool:
+        """:returns: True if synchronous replication is requested"""
+        return check_synchronous_mode(self.synchronous_mode())
+
+    def is_quorum_commit_mode(self) -> bool:
+        """:returns: True if quorum commit replication is requested"""
+        return check_quorum_commit_mode(self.synchronous_mode())
 
     @property
     def __permanent_slots(self):

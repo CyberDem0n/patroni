@@ -7,11 +7,11 @@ import yaml
 
 from collections import defaultdict
 from copy import deepcopy
-from patroni import PATRONI_ENV_PREFIX
-from patroni.exceptions import ConfigParseError
-from patroni.dcs import ClusterConfig
-from patroni.postgresql.config import CaseInsensitiveDict, ConfigHandler
-from patroni.utils import deep_compare, parse_bool, parse_int, patch_config
+from . import PATRONI_ENV_PREFIX
+from .exceptions import ConfigParseError
+from .dcs import ClusterConfig
+from .postgresql.config import CaseInsensitiveDict, ConfigHandler
+from .utils import check_quorum_commit_mode, check_synchronous_mode, deep_compare, parse_bool, parse_int, patch_config
 
 logger = logging.getLogger(__name__)
 
@@ -127,6 +127,14 @@ class Config(object):
 
     def check_mode(self, mode):
         return bool(parse_bool(self._dynamic_configuration.get(mode)))
+
+    def is_synchronous_mode(self) -> bool:
+        """:returns: True if synchronous replication is requested"""
+        return check_synchronous_mode(self._dynamic_configuration.get('synchronous_mode'))
+
+    def is_quorum_commit_mode(self) -> bool:
+        """:returns: True if quorum commit replication is requested"""
+        return check_quorum_commit_mode(self._dynamic_configuration.get('synchronous_mode'))
 
     def _load_config_path(self, path):
         """

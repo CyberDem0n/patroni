@@ -1118,7 +1118,8 @@ class TestHa(PostgresInit):
         self.ha.is_synchronous_mode = true
 
         # Test sync standby not touched when picking the same node
-        self.p.sync_handler.current_state = Mock(return_value=(['other'], ['other']))
+        self.p.sync_handler.current_state = Mock(return_value={'type': 'priority', 'numsync': 1, 'numsync_confirmed': 1,
+                                                               'active': ['other'], 'sync': ['other']})
         self.ha.cluster = get_cluster_initialized_with_leader(sync=('leader', 'other'))
         self.ha.run_cycle()
         mock_set_sync.assert_not_called()
@@ -1126,13 +1127,15 @@ class TestHa(PostgresInit):
         mock_set_sync.reset_mock()
 
         # Test sync standby is replaced when switching standbys
-        self.p.sync_handler.current_state = Mock(return_value=(['other2'], []))
+        self.p.sync_handler.current_state = Mock(return_value={'type': 'priority', 'numsync': 0, 'numsync_confirmed': 0,
+                                                               'active': ['other2'], 'sync': []})
         self.ha.dcs.write_sync_state = Mock(return_value=True)
         self.ha.run_cycle()
         mock_set_sync.assert_called_once_with(['other2'])
 
         # Test sync standby is replaced when new standby is joined
-        self.p.sync_handler.current_state = Mock(return_value=(['other2', 'other3'], ['other2']))
+        self.p.sync_handler.current_state = Mock(return_value={'type': 'priority', 'numsync': 1, 'numsync_confirmed': 1,
+                                                               'active': ['other2', 'other3'], 'sync': ['other2']})
         self.ha.dcs.write_sync_state = Mock(return_value=True)
         self.ha.run_cycle()
         self.assertEqual(mock_set_sync.call_args_list[0][0], (['other2'],))
@@ -1149,7 +1152,8 @@ class TestHa(PostgresInit):
         self.ha.dcs.write_sync_state = Mock(return_value=True)
         self.ha.dcs.get_cluster = Mock(return_value=get_cluster_initialized_with_leader(sync=('leader', 'other')))
         # self.ha.cluster = get_cluster_initialized_with_leader(sync=('leader', 'other'))
-        self.p.sync_handler.current_state = Mock(return_value=(['other2'], ['other2']))
+        self.p.sync_handler.current_state = Mock(return_value={'type': 'priority', 'numsync': 1, 'numsync_confirmed': 1,
+                                                               'active': ['other2'], 'sync': ['other2']})
         self.ha.run_cycle()
         self.ha.dcs.get_cluster.assert_called_once()
         self.assertEqual(self.ha.dcs.write_sync_state.call_count, 2)
@@ -1172,7 +1176,8 @@ class TestHa(PostgresInit):
         # Test sync set to '*' when synchronous_mode_strict is enabled
         mock_set_sync.reset_mock()
         self.ha.is_synchronous_mode_strict = true
-        self.p.sync_handler.current_state = Mock(return_value=([], []))
+        self.p.sync_handler.current_state = Mock(return_value={'type': 'priority', 'numsync': 0,
+                                                               'numsync_confirmed': 0, 'active': [], 'sync': []})
         self.ha.run_cycle()
         mock_set_sync.assert_called_once_with(['*'])
 
@@ -1422,3 +1427,8 @@ class TestHa(PostgresInit):
             self.assertEqual(self.ha.patroni.request.call_args[1]['timeout'], 2)
             mock_logger.assert_called()
             self.assertTrue(mock_logger.call_args[0][0].startswith('Request to Citus coordinator'))
+
+    def test_is_quorum_commit_mode(self):
+        self.assertFalse(self.ha.is_quorum_commit_mode())
+        self.ha.cluster = None
+        self.assertFalse(self.ha.is_quorum_commit_mode())

@@ -35,32 +35,60 @@ class TestSync(BaseTestPostgresql):
         # sync node is a bit behind of async, but we prefer it anyway
         with patch.object(Postgresql, "_cluster_info_state_get", side_effect=[self.leadermem.name,
                                                                               'on', pg_stat_replication]):
-            self.assertEqual(self.s.current_state(cluster), ([self.leadermem.name], [self.leadermem.name]))
+            self.assertEqual(self.s.current_state(cluster, 1, -1),
+                             {'type': 'priority', 'numsync': 1, 'numsync_confirmed': 1,
+                              'active': [self.leadermem.name], 'sync': [self.leadermem.name]})
 
         # prefer node with sync_state='potential', even if it is slightly behind of async
         pg_stat_replication[0]['sync_state'] = 'potential'
         for r in pg_stat_replication:
             r['write_lsn'] = r.pop('flush_lsn')
         with patch.object(Postgresql, "_cluster_info_state_get", side_effect=['', 'remote_write', pg_stat_replication]):
-            self.assertEqual(self.s.current_state(cluster), ([self.leadermem.name], []))
+            self.assertEqual(self.s.current_state(cluster, 1, -1),
+                             {'type': 'off', 'numsync': 0, 'numsync_confirmed': 0,
+                              'active': [self.leadermem.name], 'sync': []})
 
         # when there are no sync or potential candidates we pick async with the minimal replication lag
         for i, r in enumerate(pg_stat_replication):
             r.update(replay_lsn=3 - i, application_name=r['application_name'].upper())
         missing = pg_stat_replication.pop(0)
         with patch.object(Postgresql, "_cluster_info_state_get", side_effect=['', 'remote_apply', pg_stat_replication]):
-            self.assertEqual(self.s.current_state(cluster), ([self.me.name], []))
+            self.assertEqual(self.s.current_state(cluster, 1, -1),
+                             {'type': 'off', 'numsync': 0, 'numsync_confirmed': 0,
+                              'active': [self.me.name], 'sync': []})
 
         # unknown sync node is ignored
         missing.update(application_name='missing', sync_state='sync')
         pg_stat_replication.insert(0, missing)
         with patch.object(Postgresql, "_cluster_info_state_get", side_effect=['', 'remote_apply', pg_stat_replication]):
-            self.assertEqual(self.s.current_state(cluster), ([self.me.name], []))
+            self.assertEqual(self.s.current_state(cluster, 1, -1),
+                             {'type': 'off', 'numsync': 0, 'numsync_confirmed': 0,
+                              'active': [self.me.name], 'sync': []})
 
         # invalid synchronous_standby_names and empty pg_stat_replication
         with patch.object(Postgresql, "_cluster_info_state_get", side_effect=['a b', 'remote_apply', None]):
             self.p._major_version = 90400
-            self.assertEqual(self.s.current_state(cluster), ([], []))
+            self.assertEqual(self.s.current_state(cluster, 1, -1),
+                             {'type': 'off', 'numsync': 0, 'numsync_confirmed': 0, 'active': [], 'sync': []})
+
+    @patch.object(Postgresql, 'last_operation', Mock(return_value=1))
+    def test_current_state_quorum(self):
+        self.p._synchronous_mode = 'quorum'
+        cluster = Cluster(True, None, self.leader, 0, [self.me, self.other, self.leadermem], None,
+                          SyncState(0, self.me.name, self.leadermem.name, 0), None, None, None)
+
+        pg_stat_replication = [
+            {'pid': 100, 'application_name': self.leadermem.name, 'sync_state': 'quorum', 'flush_lsn': 1},
+            {'pid': 101, 'application_name': self.other.name, 'sync_state': 'quorum', 'flush_lsn': 2}]
+
+        # sync node is a bit behind of async, but we prefer it anyway
+        with patch.object(Postgresql, "_cluster_info_state_get",
+                          side_effect=['ANY 1 ({0},"{1}")'.format(self.leadermem.name, self.other.name),
+                                       'on', pg_stat_replication]):
+            self.assertEqual(self.s.current_state(cluster, 1, -1),
+                             {'type': 'quorum', 'numsync': 1, 'numsync_confirmed': 2,
+                              'active': [self.other.name, self.leadermem.name],
+                              'sync': [self.leadermem.name, self.other.name]})
 
     def test_set_sync_standby(self):
         def value_in_conf():
@@ -79,11 +107,49 @@ class TestSync(BaseTestPostgresql):
         mock_reload.assert_not_called()
         self.assertEqual(value_in_conf(), "synchronous_standby_names = 'n1'")
 
+        mock_reload.reset_mock()
         self.s.set_synchronous_standby_names(['n1', 'n2'])
         mock_reload.assert_called()
         self.assertEqual(value_in_conf(), "synchronous_standby_names = '2 (n1,n2)'")
 
         mock_reload.reset_mock()
+        self.s.set_synchronous_standby_names(['*'])
+        mock_reload.assert_called()
+        self.assertEqual(value_in_conf(), "synchronous_standby_names = '*'")
+
+        mock_reload.reset_mock()
         self.s.set_synchronous_standby_names([])
         mock_reload.assert_called()
         self.assertEqual(value_in_conf(), None)
+
+        self.p._synchronous_mode = 'quorum'
+        mock_reload.reset_mock()
+        self.s.set_synchronous_standby_names([], 1)
+        mock_reload.assert_called()
+        self.assertEqual(value_in_conf(), "synchronous_standby_names = 'ANY 1 (*)'")
+
+        mock_reload.reset_mock()
+        self.s.set_synchronous_standby_names(['a', 'b'], 1)
+        mock_reload.assert_called()
+        self.assertEqual(value_in_conf(), "synchronous_standby_names = 'ANY 1 (a,b)'")
+
+        mock_reload.reset_mock()
+        self.s.set_synchronous_standby_names(['a', 'b'], 3)
+        mock_reload.assert_called()
+        self.assertEqual(value_in_conf(), "synchronous_standby_names = 'ANY 3 (a,b)'")
+
+        self.p._major_version = 90601
+        mock_reload.reset_mock()
+        self.s.set_synchronous_standby_names([], 1)
+        mock_reload.assert_called()
+        self.assertEqual(value_in_conf(), "synchronous_standby_names = '1 (*)'")
+
+        mock_reload.reset_mock()
+        self.s.set_synchronous_standby_names(['a', 'b'], 1)
+        mock_reload.assert_called()
+        self.assertEqual(value_in_conf(), "synchronous_standby_names = '1 (a,b)'")
+
+        mock_reload.reset_mock()
+        self.s.set_synchronous_standby_names(['a', 'b'], 3)
+        mock_reload.assert_called()
+        self.assertEqual(value_in_conf(), "synchronous_standby_names = '3 (a,b)'")

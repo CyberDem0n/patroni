@@ -11,6 +11,7 @@ import tempfile
 import time
 
 from dateutil import tz
+from typing import Any
 
 from .exceptions import PatroniException
 from .version import __version__
@@ -401,6 +402,16 @@ def iter_response_objects(response):
 def is_standby_cluster(config):
     # Check whether or not provided configuration describes a standby cluster
     return isinstance(config, dict) and (config.get('host') or config.get('port') or config.get('restore_command'))
+
+
+def check_quorum_commit_mode(value: Any) -> bool:
+    """:returns: True if quorum commit is requested"""
+    return str(value).lower() == 'quorum'
+
+
+def check_synchronous_mode(value: Any) -> bool:
+    """:returns: True if synchronous replication is requested"""
+    return parse_bool(value) is True or check_quorum_commit_mode(value)
 
 
 def cluster_as_json(cluster):

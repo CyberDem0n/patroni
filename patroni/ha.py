@@ -165,7 +165,9 @@ class Ha(object):
         # used only in backoff after failing a pre_promote script
         self._released_leader_key_timestamp = 0
 
-    def check_mode(self, mode):
+    def check_mode(self, mode) -> bool:
+        """:returns: True if 'mode' is enabled in the global configuration.
+                     Where mode could be synchronous_mode_strict, failsafe_mode, pause, check_timeline, and so on"""
         # Try to protect from the case when DCS was wiped out during pause
         if self.cluster and self.cluster.config and self.cluster.config.modify_index:
             return self.cluster.check_mode(mode)
@@ -570,8 +572,20 @@ class Ha(object):
 
         return follow_reason
 
-    def is_synchronous_mode(self):
-        return self.check_mode('synchronous_mode')
+    def is_synchronous_mode(self) -> bool:
+        """:returns: True if synchronous replication is requested"""
+        if self.cluster and self.cluster.config and self.cluster.config.modify_index:
+            return self.cluster.is_synchronous_mode()
+        else:
+            return self.patroni.config.is_synchronous_mode()
+
+    def is_quorum_commit_mode(self) -> bool:
+        """:returns: True if quorum commit replication is requested and `supported`"""
+        if self.cluster and self.cluster.config and self.cluster.config.modify_index:
+            ret = self.cluster.is_quorum_commit_mode()
+        else:
+            ret = self.patroni.config.is_quorum_commit_mode()
+        return ret and self.state_handler.supports_multiple_sync
 
     def is_synchronous_mode_strict(self):
         return self.check_mode('synchronous_mode_strict')
@@ -591,9 +605,10 @@ class Ha(object):
         if self.is_synchronous_mode():
             sync_node_count = self.patroni.config['synchronous_node_count']
             current = self.cluster.sync.voters if self.cluster.sync.leader else []
-            picked, allow_promote = self.state_handler.sync_handler.current_state(self.cluster, sync_node_count,
-                                                                                  self.patroni.config[
-                                                                                      'maximum_lag_on_syncnode'])
+            current_state = self.state_handler.sync_handler.current_state(self.cluster, sync_node_count,
+                                                                          self.patroni.config[
+                                                                              'maximum_lag_on_syncnode'])
+            picked, allow_promote = current_state['active'], current_state['sync']
             if set(picked) != set(current):
                 # update synchronous standby list in dcs temporarily to point to common nodes in current and picked
                 sync_common = list(set(current).intersection(set(allow_promote)))
@@ -617,10 +632,11 @@ class Ha(object):
                 if picked and picked[0] != '*' and set(allow_promote) != set(picked) and not allow_promote:
                     # Wait for PostgreSQL to enable synchronous mode and see if we can immediately set sync_standby
                     time.sleep(2)
-                    _, allow_promote = self.state_handler.sync_handler.current_state(self.cluster,
-                                                                                     sync_node_count,
-                                                                                     self.patroni.config[
-                                                                                         'maximum_lag_on_syncnode'])
+                    current_state = self.state_handler.sync_handler.current_state(self.cluster,
+                                                                                  sync_node_count,
+                                                                                  self.patroni.config[
+                                                                                      'maximum_lag_on_syncnode'])
+                    allow_promote = current_state['sync']
                 if allow_promote and set(allow_promote) != set(sync_common):
                     try:
                         cluster = self.dcs.get_cluster()

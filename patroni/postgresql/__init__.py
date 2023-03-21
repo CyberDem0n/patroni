@@ -27,7 +27,8 @@ from .sync import SyncHandler
 from .. import psycopg
 from ..dcs import Member
 from ..exceptions import PostgresConnectionException
-from ..utils import Retry, RetryFailedError, polling_loop, data_directory_is_empty, parse_int
+from ..utils import Retry, RetryFailedError, check_quorum_commit_mode, check_synchronous_mode, polling_loop,\
+        data_directory_is_empty, parse_int
 
 
 logger = logging.getLogger(__name__)
@@ -104,7 +105,7 @@ class Postgresql(object):
         self._cluster_info_state = {}
         self._has_permanent_logical_slots = True
         self._enforce_hot_standby_feedback = False
-        self._is_synchronous_mode = True
+        self._synchronous_mode = True
         self._cached_replica_timeline = None
 
         # Last known running process
@@ -156,6 +157,16 @@ class Postgresql(object):
         return 'lsn' if self._major_version >= 100000 else 'location'
 
     @property
+    def supports_quorum_commit(self) -> bool:
+        """:returns: True if quorum commit is supported by Postgres"""
+        return self._major_version >= 100000
+
+    @property
+    def supports_multiple_sync(self):
+        """:returns: True if Postgres version supports more than one synchronous node"""
+        return self._major_version >= 90600
+
+    @property
     def cluster_info_query(self):
         """Returns the monitoring query with a fixed number of fields.
 
@@ -180,7 +191,7 @@ class Postgresql(object):
                          "FROM pg_catalog.pg_stat_get_wal_senders() w," +
                          " pg_catalog.pg_stat_get_activity(w.pid)" +
                          " WHERE w.state = 'streaming') r)").format(self.wal_name, self.lsn_name)
-                        if self._is_synchronous_mode and self.role in ('master', 'primary') else "'on', '', NULL")
+                        if self.is_synchronous_mode() and self.role in ('master', 'primary') else "'on', '', NULL")
 
         if self._major_version >= 90600:
             extra = ("(SELECT pg_catalog.json_agg(s.*) FROM (SELECT slot_name, slot_type as type, datoid::bigint, " +
@@ -363,7 +374,7 @@ class Postgresql(object):
                 self._has_permanent_logical_slots or
                 cluster.should_enforce_hot_standby_feedback(self.name, nofailover, self.major_version))
 
-            self._is_synchronous_mode = cluster.is_synchronous_mode()
+            self._synchronous_mode = cluster.synchronous_mode()
 
     def _cluster_info_state_get(self, name):
         if not self._cluster_info_state:
@@ -413,6 +424,14 @@ class Postgresql(object):
 
     def pg_stat_replication(self):
         return self._cluster_info_state_get('pg_stat_replication') or []
+
+    def is_synchronous_mode(self) -> bool:
+        """:returns: True if synchronous replication is requested"""
+        return check_synchronous_mode(self._synchronous_mode)
+
+    def is_quorum_commit_mode(self) -> bool:
+        """:returns: True if quorum commit is requested and `supported`"""
+        return check_quorum_commit_mode(self._synchronous_mode) and self.supports_multiple_sync
 
     def is_leader(self):
         try:

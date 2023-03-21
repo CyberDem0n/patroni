@@ -3,8 +3,10 @@ import re
 import time
 
 from copy import deepcopy
+from typing import Any, Dict, Iterable, Optional
 
 from .validator import CaseInsensitiveDict
+from ..dcs import Cluster
 from ..psycopg import quote_ident as _quote_ident
 
 logger = logging.getLogger(__name__)
@@ -26,19 +28,20 @@ SYNC_REP_PARSER_RE = re.compile(r"""
 _EMPTY_SSN = {'type': 'off', 'num': 0, 'members': CaseInsensitiveDict({})}
 
 
-def quote_ident(value):
+def quote_ident(value: str) -> str:
     """Very simplified version of quote_ident"""
     return value if SYNC_STANDBY_NAME_RE.match(value) else _quote_ident(value)
 
 
-def parse_sync_standby_names(value):
+def parse_sync_standby_names(value: str) -> Dict[str, Any]:
     """Parse postgresql synchronous_standby_names to constituent parts.
-    Returns dict with the following keys:
-    * type: 'quorum'|'priority'
-    * num: int
-    * members: CaseInsensitiveDict, with names as keys
-    * has_star: bool - Present if true
-    If the configuration value can not be parsed, raises a ValueError.
+
+    :returns: dict with the following keys:
+              * type: 'quorum'|'priority'|'off'
+              * num: int
+              * members: CaseInsensitiveDict, with names as keys
+              * has_star: bool - Present if true
+    :raises ValueError: if the configuration value can not be parsed
 
     >>> parse_sync_standby_names('')['type']
     'off'
@@ -137,7 +140,7 @@ class SyncHandler(object):
     and the `current_state()` method will count newly added names as "sync" only when
     they reached memorized LSN and also reported as "sync" by `pg_stat_replication`"""
 
-    def __init__(self, postgresql):
+    def __init__(self, postgresql) -> None:
         self._postgresql = postgresql
         self._synchronous_standby_names = ''  # last known value of synchronous_standby_names
         self._ssn_data = deepcopy(_EMPTY_SSN)
@@ -145,7 +148,7 @@ class SyncHandler(object):
         # "sync" replication connections, that were verified to reach self._primary_flush_lsn at some point
         self._ready_replicas = CaseInsensitiveDict({})  # keys: member names, values: connection pids
 
-    def _handle_synchronous_standby_names_change(self):
+    def _handle_synchronous_standby_names_change(self) -> None:
         """If synchronous_standby_names has changed we need to check that newly added replicas
         have reached self._primary_flush_lsn. Only after that they could be counted as sync."""
         synchronous_standby_names = self._postgresql.synchronous_standby_names()
@@ -169,7 +172,7 @@ class SyncHandler(object):
         self._postgresql.query('SELECT pg_catalog.txid_current()')  # Ensure some WAL traffic to move replication
         self._postgresql.reset_cluster_info_state(None)  # Reset internal cache to query fresh values
 
-    def current_state(self, cluster, sync_node_count=1, sync_node_maxlag=-1):
+    def current_state(self, cluster: Cluster, sync_node_count: int, sync_node_maxlag: int) -> Dict[str, Any]:
         """Finds best candidates to be the synchronous standbys.
 
         Current synchronous standby is always preferred, unless it has disconnected or does not want to be a
@@ -179,7 +182,16 @@ class SyncHandler(object):
         standbys during high loads. Any less or equal of 0 value keep the behavior backward compatible and
         will not swap. Please note that it will not also swap sync standbys in case where all replicas are hung.
 
-        :returns: tuple of candidates list and synchronous standby list."""
+        :param cluster: current cluster topology from DCS
+        :param sync_node_count: how many synchronous candidates to pick from `pg_stat_replication` view
+        :param sync_node_maxlag: stop considering node as synchronous or candidate if lag exceeds the value
+        :returns: current synchronous replication state as a dict:
+                  - numsync: number of synchronous nodes requested
+                  - numsync_confirmed: number of nodes that are known to catch up
+                  - type: type of sync replication according to synchronous_standby_names: 'quorum'|'priority'|'off'
+                  - sync: list of nodes potentially being synced to
+                  - active: list of nodes that are sync capable
+                  both lists are ordered by `nofailover` ASC and replication lag DESC"""
 
         self._handle_synchronous_standby_names_change()
 
@@ -209,43 +221,87 @@ class SyncHandler(object):
         max_lsn = max(replica_list, key=lambda x: x[3])[3]\
             if len(replica_list) > 1 else self._postgresql.last_operation()
 
-        if self._postgresql.major_version < 90600:
+        if not self._postgresql.supports_multiple_sync:
             sync_node_count = 1
 
-        candidates = []
+        active = []
         sync_nodes = []
+        numsync_confirmed = 0
         # Prefer members without nofailover tag. We are relying on the fact that sorts are guaranteed to be stable.
-        for pid, app_name, sync_state, replica_lsn, _ in sorted(replica_list, key=lambda x: x[4]):
-            # if standby name is listed in the /sync key we can count it as synchronous, otherwice
-            # ig becomes really synchronous when sync_state = 'sync' and it is known that it managed to catch up
-            if app_name not in self._ready_replicas and app_name in self._ssn_data['members'] and\
-                    (cluster.sync and app_name in cluster.sync.members or
-                     sync_state == 'sync' and replica_lsn >= self._primary_flush_lsn):
-                self._ready_replicas[app_name] = pid
+        for pid, app_name, sync_state, replica_lsn, nofailover in sorted(replica_list, key=lambda x: x[4]):
+            if app_name not in self._ready_replicas and app_name in self._ssn_data['members']:
+                if self._postgresql.is_quorum_commit_mode():
+                    # When quorum commit is enabled we can't check against cluster.sync because nodes
+                    # are written there when at least one of them caught up with _primary_flush_lsn.
+                    if replica_lsn >= self._primary_flush_lsn and\
+                            (sync_state == 'quorum' or
+                             not self._postgresql.supports_quorum_commit and sync_state in ('sync', 'potential')):
+                        self._ready_replicas[app_name] = pid
+                elif cluster.sync and app_name in cluster.sync.members or\
+                        sync_state == 'sync' and replica_lsn >= self._primary_flush_lsn:
+                    # if standby name is listed in the /sync key we can count it as synchronous, otherwice it becomes
+                    # "really" synchronous when sync_state = 'sync' and we known that it managed to catch up
+                    self._ready_replicas[app_name] = pid
 
             if sync_node_maxlag <= 0 or max_lsn - replica_lsn <= sync_node_maxlag:
-                candidates.append(app_name)
-                if sync_state == 'sync' and app_name in self._ready_replicas:
-                    sync_nodes.append(app_name)
-            if len(candidates) >= sync_node_count:
-                break
+                if self._postgresql.is_quorum_commit_mode():
+                    # add nodes with nofailover tag only to get enough "active" nodes
+                    if not nofailover or len(active) < sync_node_count:
+                        if app_name in self._ready_replicas:
+                            numsync_confirmed += 1
+                        active.append(app_name)
+                else:
+                    active.append(app_name)
+                    if sync_state == 'sync' and app_name in self._ready_replicas:
+                        sync_nodes.append(app_name)
+                        numsync_confirmed += 1
+                    if len(active) >= sync_node_count:
+                        break
 
-        return candidates, sync_nodes
+        if self._postgresql.is_quorum_commit_mode():
+            sync_nodes = [] if self._ssn_data.get('has_star') else list(self._ssn_data['members'].keys())
 
-    def set_synchronous_standby_names(self, value):
+        return {
+            'type': self._ssn_data['type'],
+            'numsync': 0 if self._ssn_data.get('has_star') else self._ssn_data['num'],
+            'numsync_confirmed': numsync_confirmed,
+            'sync': sync_nodes,
+            'active': active
+        }
+
+    def set_synchronous_standby_names(self, sync: Iterable[str], num: Optional[int] = None) -> None:
         """Constructs and sets `synchronous_standby_names` value.
 
-        :param value: list[str] - the list of wanted sync members"""
-        if value and value != ['*']:
-            value = [quote_ident(x) for x in value]
+        :param value: set of nodes to sync to
+        :param num: specifies number of nodes to sync to. Value is set only in case if quorum commit is enabled"""
 
-        if self._postgresql.major_version >= 90600 and len(value) > 1:
-            sync_param = '{0} ({1})'.format(len(value), ','.join(value))
+        # Special case. If sync nodes set is empty but requested num of sync nodes >= 1
+        # we want to set synchronous_standby_names to '*'
+        has_asterisk = '*' in sync or num and num >= 1 and not sync
+        if has_asterisk:
+            sync = ['*']
+
+        # names must be quoted, but '*' doesn't require quoting
+        if not has_asterisk:
+            sync = [quote_ident(x) for x in sync]
+            if num:
+                sync = list(sorted(sync))  # sort in case of quorum commit to provide deterministic behavior
+
+        if self._postgresql.supports_multiple_sync and len(sync) > 1:
+            if num is None:
+                num = len(sync)
+            sync_param = '{0} ({1})'.format(len(sync), ','.join(sync))
+            sync_param = ','.join(sync)
         else:
-            sync_param = next(iter(value), None)
+            sync_param = next(iter(sync), None)
+
+        if self._postgresql.is_quorum_commit_mode() or self._postgresql.supports_multiple_sync and len(sync) > 1:
+            prefix = 'ANY ' if self._postgresql.is_quorum_commit_mode()\
+                and self._postgresql.supports_quorum_commit else ''
+            sync_param = '{0}{1} ({2})'.format(prefix, num, sync_param)
 
         if not (self._postgresql.config.set_synchronous_standby_names(sync_param) and
-                self._postgresql.state == 'running' and self._postgresql.is_leader()) or value == ['*']:
+                self._postgresql.state == 'running' and self._postgresql.is_leader()) or has_asterisk:
             return
 
         time.sleep(0.1)  # Usualy it takes 1ms to reload postgresql.conf, but we will give it 100ms
