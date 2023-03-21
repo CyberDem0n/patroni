@@ -14,6 +14,7 @@ from collections import defaultdict, namedtuple
 from copy import deepcopy
 from random import randint
 from threading import Event, Lock
+from typing import Any, Dict, Iterable, List, Optional, Union
 from urllib.parse import urlparse, urlunparse, parse_qsl
 
 from ..exceptions import PatroniFatalException
@@ -365,16 +366,17 @@ class ClusterConfig(namedtuple('ClusterConfig', 'index,data,modify_index')):
         return self.data.get('max_timelines_history', 0)
 
 
-class SyncState(namedtuple('SyncState', 'index,leader,sync_standby')):
+class SyncState(namedtuple('SyncState', 'index,leader,sync_standby,quorum')):
     """Immutable object (namedtuple) which represents last observed synhcronous replication state
 
     :param index: modification index of a synchronization key in a Configuration Store
     :param leader: reference to member that was leader
     :param sync_standby: synchronous standby list (comma delimited) which are last synchronized to leader
+    :param quorum: if the node from sync_standby list is doing a leader race it should see at least quorum other nodes
     """
 
     @staticmethod
-    def from_node(index, value):
+    def from_node(index: int, value: Union[str, Dict[str, Any]]):
         """
         >>> SyncState.from_node(1, None).leader is None
         True
@@ -389,29 +391,36 @@ class SyncState(namedtuple('SyncState', 'index,leader,sync_standby')):
         >>> SyncState.from_node(1, {"leader": "leader"}).leader == "leader"
         True
         """
-        if isinstance(value, dict):
-            data = value
-        elif value:
-            try:
-                data = json.loads(value)
-                if not isinstance(data, dict):
-                    data = {}
-            except (TypeError, ValueError):
-                data = {}
-        else:
-            data = {}
-        return SyncState(index, data.get('leader'), data.get('sync_standby'))
+
+        try:
+            if value and isinstance(value, str):
+                value = json.loads(value)
+            if not isinstance(value, dict):
+                return SyncState.empty(index)
+            quorum = value.get('quorum')
+            return SyncState(index, value.get('leader'), value.get('sync_standby'), int(quorum) if quorum else 0)
+        except (TypeError, ValueError):
+            return SyncState.empty(index)
+
+    @staticmethod
+    def empty(index: int):
+        return SyncState(index, None, '', 0)
 
     @property
-    def members(self):
-        """ Returns sync_standby in list """
+    def voters(self) -> List[str]:
+        """Returns sync_standby as list"""
         return self.sync_standby and self.sync_standby.split(',') or []
 
-    def matches(self, name):
-        """
-        Returns if a node name matches one of the nodes in the sync state
+    @property
+    def members(self) -> List[str]:
+        """Returns the list of leader and sync_standbys"""
+        return [self.leader] + self.voters
 
-        >>> s = SyncState(1, 'foo', 'bar,zoo')
+    def matches(self, name: str) -> bool:
+        """
+        Returns `True` if a node name matches one of the nodes in the sync state
+
+        >>> s = SyncState(1, 'foo', 'bar,zoo', 0)
         >>> s.matches('foo')
         True
         >>> s.matches('bar')
@@ -422,10 +431,10 @@ class SyncState(namedtuple('SyncState', 'index,leader,sync_standby')):
         False
         >>> s.matches(None)
         False
-        >>> SyncState(1, None, None).matches('foo')
+        >>> SyncState.empty(1).matches('foo')
         False
         """
-        return name is not None and name in [self.leader] + self.members
+        return name is not None and name in self.members
 
 
 class TimelineHistory(namedtuple('TimelineHistory', 'index,value,lines')):
@@ -1001,14 +1010,17 @@ class AbstractDCS(abc.ABC):
         """Delete cluster from DCS"""
 
     @staticmethod
-    def sync_state(leader, sync_standby):
+    def sync_state(leader: str, sync_standby: Iterable[str], quorum: int) -> Dict[str, Any]:
         """Build sync_state dict
-           sync_standby dictionary key being kept for backward compatibility
+           sync_standby key being kept for backward compatibility
         """
-        return {'leader': leader, 'sync_standby': sync_standby and ','.join(sorted(sync_standby)) or None}
+        return {'leader': leader, 'quorum': quorum,
+                'sync_standby': ','.join(sorted(sync_standby)) if sync_standby else None}
 
-    def write_sync_state(self, leader, sync_standby, index=None):
-        sync_value = self.sync_state(leader, sync_standby)
+    def write_sync_state(self, leader: str, sync_standby: Iterable[str],
+                         quorum: int, index: Optional[Union[int, str]] = None) -> bool:
+        """Builds sync_state dict and calls DCS specific set_sync_state_value() method"""
+        sync_value = self.sync_state(leader, sync_standby, quorum)
         return self.set_sync_state_value(json.dumps(sync_value, separators=(',', ':')), index)
 
     @abc.abstractmethod
@@ -1016,7 +1028,7 @@ class AbstractDCS(abc.ABC):
         """"""
 
     @abc.abstractmethod
-    def set_sync_state_value(self, value, index=None):
+    def set_sync_state_value(self, value: str, index: Optional[Union[int, str]] = None) -> bool:
         """"""
 
     @abc.abstractmethod

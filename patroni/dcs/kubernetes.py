@@ -16,7 +16,7 @@ from collections import defaultdict
 from copy import deepcopy
 from http.client import HTTPException
 from threading import Condition, Lock, Thread
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Union
 from urllib3.exceptions import HTTPError
 
 from . import AbstractDCS, Cluster, ClusterConfig, Failover, Leader, Member, SyncState,\
@@ -1266,11 +1266,27 @@ class Kubernetes(AbstractDCS):
     def set_sync_state_value(self, value, index=None):
         """Unused"""
 
-    def write_sync_state(self, leader, sync_standby, index=None):
-        return self.patch_or_create(self.sync_path, self.sync_state(leader, sync_standby), index, False)
+    def write_sync_state(self, leader: Union[str, None], sync_standby: Union[Iterable[str], None],
+                         quorum: Union[int, None], index: Optional[str] = None) -> bool:
+        """Prepare and write annotations to $SCOPE-sync Endpoint or ConfigMap
 
-    def delete_sync_state(self, index=None):
-        return self.write_sync_state(None, None, index)
+        :param leader: current leader of the cluster
+        :param sync_standby: list of known synchronous nodes
+        :param quorum: if the node from sync_standby list is doing
+                       a leader race it should see at least quorum other nodes
+        :param index: last known `resource_version` for conditional update of the object
+        :return: True if update was successful"""
+        sync_state = self.sync_state(leader, sync_standby, quorum)
+        sync_state['quorum'] = str(sync_state['quorum']) if sync_state['quorum'] is not None else None
+        return self.patch_or_create(self.sync_path, sync_state, index, False)
+
+    def delete_sync_state(self, index: Optional[str] = None) -> bool:
+        """Patches annotations of $SCOPE-sync Endpoint or ConfigMap with empty values
+
+        Effectively it removes "leader", "sync_standby", and "quorum" annotations from the object
+        :param index: last known `resource_version` for conditional update of the object
+        :return: True if update was successful"""
+        return self.write_sync_state(None, None, None, index=index)
 
     def watch(self, leader_index, timeout):
         if self.__do_not_watch:

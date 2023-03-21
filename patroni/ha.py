@@ -590,7 +590,7 @@ class Ha(object):
         """
         if self.is_synchronous_mode():
             sync_node_count = self.patroni.config['synchronous_node_count']
-            current = self.cluster.sync.leader and self.cluster.sync.members or []
+            current = self.cluster.sync.voters if self.cluster.sync.leader else []
             picked, allow_promote = self.state_handler.sync_handler.current_state(self.cluster, sync_node_count,
                                                                                   self.patroni.config[
                                                                                       'maximum_lag_on_syncnode'])
@@ -601,6 +601,7 @@ class Ha(object):
                     logger.info("Updating synchronous privilege temporarily from %s to %s", current, sync_common)
                     if not self.dcs.write_sync_state(self.state_handler.name,
                                                      sync_common or None,
+                                                     0,
                                                      index=self.cluster.sync.index):
                         logger.info('Synchronous replication key updated by someone else.')
                         return
@@ -628,7 +629,8 @@ class Ha(object):
                     if cluster.sync.leader and cluster.sync.leader != self.state_handler.name:
                         logger.info("Synchronous replication key updated by someone else")
                         return
-                    if not self.dcs.write_sync_state(self.state_handler.name, allow_promote, index=cluster.sync.index):
+                    if not self.dcs.write_sync_state(self.state_handler.name, allow_promote,
+                                                     0, index=cluster.sync.index):
                         logger.info("Synchronous replication key updated by someone else")
                         return
                     logger.info("Synchronous standby status assigned to %s", allow_promote)
@@ -639,7 +641,7 @@ class Ha(object):
 
     def is_sync_standby(self, cluster):
         return cluster.leader and cluster.sync.leader == cluster.leader.name \
-            and self.state_handler.name in cluster.sync.members
+            and self.state_handler.name in cluster.sync.voters
 
     def while_not_sync_standby(self, func):
         """Runs specified action while trying to make sure that the node is not assigned synchronous standby status.
@@ -741,7 +743,7 @@ class Ha(object):
             if self.is_synchronous_mode():
                 # Just set ourselves as the authoritative source of truth for now. We don't want to wait for standbys
                 # to connect. We will try finding a synchronous standby in the next cycle.
-                if not self.dcs.write_sync_state(self.state_handler.name, None, index=self.cluster.sync.index):
+                if not self.dcs.write_sync_state(self.state_handler.name, None, 0, index=self.cluster.sync.index):
                     # Somebody else updated sync state, it may be due to us losing the lock. To be safe, postpone
                     # promotion until next cycle. TODO: trigger immediate retry of run_cycle
                     return 'Postponing promotion because synchronous replication state was updated by somebody else'

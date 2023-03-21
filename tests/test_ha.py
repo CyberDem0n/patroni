@@ -42,11 +42,11 @@ def get_cluster(initialize, leader, members, failover, sync, cluster_config=None
 
 
 def get_cluster_not_initialized_without_leader(cluster_config=None):
-    return get_cluster(None, None, [], None, SyncState(None, None, None), cluster_config)
+    return get_cluster(None, None, [], None, SyncState(None, None, None, 0), cluster_config)
 
 
 def get_cluster_bootstrapping_without_leader(cluster_config=None):
-    return get_cluster("", None, [], None, SyncState(None, None, None), cluster_config)
+    return get_cluster("", None, [], None, SyncState(None, None, None, 0), cluster_config)
 
 
 def get_cluster_initialized_without_leader(leader=False, failover=None, sync=None, cluster_config=None, failsafe=False):
@@ -61,7 +61,7 @@ def get_cluster_initialized_without_leader(leader=False, failover=None, sync=Non
                                  'tags': {'clonefrom': True},
                                  'scheduled_restart': {'schedule': "2100-01-01 10:53:07.560445+00:00",
                                                        'postgres_version': '99.0.0'}})
-    syncstate = SyncState(0 if sync else None, sync and sync[0], sync and sync[1])
+    syncstate = SyncState(0 if sync else None, sync and sync[0], sync and sync[1], 0)
     failsafe = {m.name: m.api_url for m in (m1, m2)} if failsafe else None
     return get_cluster(SYSID, leader, [m1, m2], failover, syncstate, cluster_config, failsafe)
 
@@ -1190,7 +1190,7 @@ class TestHa(PostgresInit):
         # When we just became primary nobody is sync
         self.assertEqual(self.ha.enforce_primary_role('msg', 'promote msg'), 'promote msg')
         mock_set_sync.assert_called_once_with([])
-        mock_write_sync.assert_called_once_with('leader', None, index=0)
+        mock_write_sync.assert_called_once_with('leader', None, 0, index=0)
 
         mock_set_sync.reset_mock()
 
@@ -1228,7 +1228,7 @@ class TestHa(PostgresInit):
         mock_acquire.assert_called_once()
         mock_follow.assert_not_called()
         mock_promote.assert_called_once()
-        mock_write_sync.assert_called_once_with('other', None, index=0)
+        mock_write_sync.assert_called_once_with('other', None, 0, index=0)
 
     def test_disable_sync_when_restarting(self):
         self.ha.is_synchronous_mode = true
