@@ -407,6 +407,11 @@ class SyncState(namedtuple('SyncState', 'index,leader,sync_standby,quorum')):
         return SyncState(index, None, '', 0)
 
     @property
+    def is_empty(self) -> bool:
+        """:returns: True is /sync key doesn't have a leader"""
+        return self.leader is None
+
+    @property
     def voters(self) -> List[str]:
         """Returns sync_standby as list"""
         return self.sync_standby and self.sync_standby.split(',') or []
