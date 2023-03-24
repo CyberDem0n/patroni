@@ -99,12 +99,14 @@ class QuorumStateResolver(object):
 
         :raises QuorumError: in case of broken state"""
 
-        if self.voters and not (len(self.voters | self.sync) <= self.quorum + self.numsync):
+        voters = self.voters | CaseInsensitiveSet([self.leader])
+        sync = self.sync | CaseInsensitiveSet([self.leader_wanted])
+        if self.voters and not (len(voters | sync) <= self.quorum + self.numsync + 1):
             raise QuorumError("Quorum and sync not guaranteed to overlap: nodes %d >= quorum %d + sync %d" %
-                              (len(self.voters | self.sync), self.quorum, self.numsync))
-        if not (self.voters <= self.sync or self.sync <= self.voters) or self.voters and not self.sync:
+                              (len(voters | sync), self.quorum, self.numsync))
+        if not (voters <= sync or sync <= voters):
             raise QuorumError("Mismatched sets: quorum only=%s sync only=%s" %
-                              (self.voters - self.sync, self.sync - self.voters))
+                              (voters - sync, sync - voters))
 
     def quorum_update(self, quorum: int, voters: CaseInsensitiveSet,
                       leader: Optional[str] = None) -> Iterator[Tuple[str, str, int, CaseInsensitiveSet]]:
@@ -132,9 +134,6 @@ class QuorumStateResolver(object):
             # It could be that the number of nodes that are known to catch up with the primary is below desired numsync.
             # We want to increase quorum to guaranty that the sync node will be found during the leader race.
             quorum += max(self.numsync - self.numsync_confirmed, 0)
-            if not voters:
-                # We want to reset numsync_confirmed to 0 if voters will become empty after next update of /sync key
-                self.numsync_confirmed = 0
 
         if (self.leader, quorum, voters) == (old_leader, self.quorum, self.voters):
             if self.voters:
@@ -188,15 +187,20 @@ class QuorumStateResolver(object):
             logger.warning('%s', e)
             yield from self.quorum_update(len(self.sync) - self.numsync, self.sync)
 
-        # numsync_confirmed could be 0 after restart/failover, we will calculate it from quorum
-        if self.numsync_confirmed == 0 and self.sync:
-            self.numsync_confirmed = len(self.voters & self.sync) - self.quorum
-            logger.debug('numsync_confirmed=0, adjusting it to %d', self.numsync_confirmed)
-
         # If leader changes we need to add the old leader to quorum (voters)
         if self.leader_wanted != self.leader:
-            voters = CaseInsensitiveSet(self.voters | CaseInsensitiveSet([self.leader]))
-            yield from self.quorum_update(self.quorum, voters, self.leader_wanted)
+            voters = (self.voters - CaseInsensitiveSet([self.leader_wanted])) | CaseInsensitiveSet([self.leader])
+            yield from self.quorum_update(self.quorum, CaseInsensitiveSet(voters), self.leader_wanted)
+            # right after promote there could be no replication connections yet
+            if not self.sync & self.active:
+                return  # give another loop_wait seconds for replicas to reconnect before removing them from quorum
+
+        assert self.leader == self.leader_wanted
+
+        # numsync_confirmed could be 0 after restart/failover, we will calculate it from quorum
+        if self.numsync_confirmed == 0 and self.sync & self.active:
+            self.numsync_confirmed = min(len(self.sync & self.active), len(self.voters) - self.quorum)
+            logger.debug('numsync_confirmed=0, adjusting it to %d', self.numsync_confirmed)
 
         # Handle non steady state cases
         if self.sync < self.voters:

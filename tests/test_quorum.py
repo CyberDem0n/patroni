@@ -263,6 +263,24 @@ class QuorumTest(unittest.TestCase):
                                         ('quorum', leader, 1, set('bcd')),
                                     ])
 
+    def test_promotion(self):
+        # Beginning stat: 'a' in the primary, 1 of bc in sync
+        # a fails, c gets quorum votes and promotes
+        self.check_state_transitions(leader='a', quorum=1, voters=set('bc'),
+                                     numsync=1, sync=set('ab'), numsync_confirmed=0, active=set(),
+                                     sync_wanted=1, leader_wanted='c', expected=[
+                                         ('quorum', 'c', 1, set('ab')),  # set c as a leader and move a to voters
+                                         #  and stop because there are no active nodes
+                                    ])
+
+        # next loop, b managed to reconnect
+        self.check_state_transitions(leader='c', quorum=1, voters=set('ab'),
+                                     numsync=1, sync=set('ab'), numsync_confirmed=0, active=set('b'),
+                                     sync_wanted=1, leader_wanted='c', expected=[
+                                         ('sync', 'c', 1, set('b')),    # remove a from sync as inactive
+                                         ('quorum', 'c', 0, set('b')),  # remove a from voters and reduce quorum
+                                    ])
+
     def test_nonsync_promotion(self):
         # Beginning state: 1 of bc in sync. e.g. (a primary, ssn = ANY 1 (b c))
         # a fails, d sees b and c, knows that it is in sync and decides to promote.
@@ -270,9 +288,14 @@ class QuorumTest(unittest.TestCase):
         # and let situation resolve. Node d ssn=ANY 1 (b c)
         leader = 'd'
         self.check_state_transitions(leader='a', quorum=1, voters=set('bc'),
-                                     numsync=2, sync=set('abc'), numsync_confirmed=0, active=set('bc'),
+                                     numsync=2, sync=set('abc'), numsync_confirmed=0, active=set(),
                                      sync_wanted=1, leader_wanted=leader, expected=[
                                         ('quorum', leader, 1, set('abc')),  # Set ourselves to be a member of the quorum
+                                        # and stop because there are no active nodes
+                                    ])
+        self.check_state_transitions(leader=leader, quorum=1, voters=set('abc'),
+                                     numsync=2, sync=set('abc'), numsync_confirmed=0, active=set('bc'),
+                                     sync_wanted=1, leader_wanted=leader, expected=[
                                         ('sync', leader, 2, set('bc')),     # Remove a from being synced to.
                                         ('quorum', leader, 1, set('bc')),   # Remove a from quorum
                                         ('sync', leader, 1, set('bc')),     # Can now reduce replication factor back
