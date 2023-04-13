@@ -579,7 +579,8 @@ class Ha(object):
         promoting standbys that were guaranteed to be replicating synchronously.
         """
         if self.is_synchronous_mode():
-            picked, allow_promote = self.state_handler.sync_handler.current_state(self.cluster)
+            current_state = self.state_handler.sync_handler.current_state(self.cluster)
+            picked, allow_promote = current_state['active'], current_state['sync']
             voters = CaseInsensitiveSet(self.cluster.sync.voters)
 
             if picked != voters:
@@ -605,7 +606,7 @@ class Ha(object):
                 if picked and picked != CaseInsensitiveSet('*') and allow_promote != picked and not allow_promote:
                     # Wait for PostgreSQL to enable synchronous mode and see if we can immediately set sync_standby
                     time.sleep(2)
-                    _, allow_promote = self.state_handler.sync_handler.current_state(self.cluster)
+                    allow_promote = self.state_handler.sync_handler.current_state(self.cluster)['sync']
                 if allow_promote and allow_promote != sync_common:
                     try:
                         cluster = self.dcs.get_cluster()

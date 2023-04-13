@@ -1129,8 +1129,9 @@ class TestHa(PostgresInit):
         self.ha.is_synchronous_mode = true
 
         # Test sync standby not touched when picking the same node
-        self.p.sync_handler.current_state = Mock(return_value=(CaseInsensitiveSet(['other']),
-                                                               CaseInsensitiveSet(['other'])))
+        self.p.sync_handler.current_state = Mock(return_value={'type': 'priority', 'numsync': 1, 'numsync_confirmed': 1,
+                                                               'active': CaseInsensitiveSet(['other']),
+                                                               'sync': CaseInsensitiveSet(['other'])})
         self.ha.cluster = get_cluster_initialized_with_leader(sync=('leader', 'other'))
         self.ha.run_cycle()
         mock_set_sync.assert_not_called()
@@ -1138,14 +1139,17 @@ class TestHa(PostgresInit):
         mock_set_sync.reset_mock()
 
         # Test sync standby is replaced when switching standbys
-        self.p.sync_handler.current_state = Mock(return_value=(CaseInsensitiveSet(['other2']), CaseInsensitiveSet()))
+        self.p.sync_handler.current_state = Mock(return_value={'type': 'priority', 'numsync': 0, 'numsync_confirmed': 0,
+                                                               'active': CaseInsensitiveSet(['other2']),
+                                                               'sync': CaseInsensitiveSet()})
         self.ha.dcs.write_sync_state = Mock(return_value=True)
         self.ha.run_cycle()
         mock_set_sync.assert_called_once_with(CaseInsensitiveSet(['other2']))
 
         # Test sync standby is replaced when new standby is joined
-        self.p.sync_handler.current_state = Mock(return_value=(CaseInsensitiveSet(['other2', 'other3']),
-                                                               CaseInsensitiveSet(['other2'])))
+        self.p.sync_handler.current_state = Mock(return_value={'type': 'priority', 'numsync': 1, 'numsync_confirmed': 1,
+                                                               'active': CaseInsensitiveSet(['other2', 'other3']),
+                                                               'sync': CaseInsensitiveSet(['other2'])})
         self.ha.dcs.write_sync_state = Mock(return_value=True)
         self.ha.run_cycle()
         self.assertEqual(mock_set_sync.call_args_list[0][0], (CaseInsensitiveSet(['other2']),))
@@ -1162,8 +1166,9 @@ class TestHa(PostgresInit):
         self.ha.dcs.write_sync_state = Mock(return_value=True)
         self.ha.dcs.get_cluster = Mock(return_value=get_cluster_initialized_with_leader(sync=('leader', 'other')))
         # self.ha.cluster = get_cluster_initialized_with_leader(sync=('leader', 'other'))
-        self.p.sync_handler.current_state = Mock(return_value=(CaseInsensitiveSet(['other2']),
-                                                               CaseInsensitiveSet(['other2'])))
+        self.p.sync_handler.current_state = Mock(return_value={'type': 'priority', 'numsync': 1, 'numsync_confirmed': 1,
+                                                               'active': CaseInsensitiveSet(['other2']),
+                                                               'sync': CaseInsensitiveSet(['other2'])})
         self.ha.run_cycle()
         self.ha.dcs.get_cluster.assert_called_once()
         self.assertEqual(self.ha.dcs.write_sync_state.call_count, 2)
@@ -1185,7 +1190,9 @@ class TestHa(PostgresInit):
 
         # Test sync set to '*' when synchronous_mode_strict is enabled
         mock_set_sync.reset_mock()
-        self.p.sync_handler.current_state = Mock(return_value=(CaseInsensitiveSet(), CaseInsensitiveSet()))
+        self.p.sync_handler.current_state = Mock(return_value={'type': 'priority', 'numsync': 0,
+                                                               'numsync_confirmed': 0, 'active': CaseInsensitiveSet(),
+                                                               'sync': CaseInsensitiveSet()})
         with patch('patroni.config.GlobalConfig.is_synchronous_mode_strict', PropertyMock(return_value=True)):
             self.ha.run_cycle()
         mock_set_sync.assert_called_once_with(CaseInsensitiveSet('*'))
