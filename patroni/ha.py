@@ -18,6 +18,7 @@ from .exceptions import DCSError, PostgresConnectionException, PatroniFatalExcep
 from .postgresql.callback_executor import CallbackAction
 from .postgresql.misc import postgres_version_to_int
 from .postgresql.rewind import Rewind
+from .quorum import QuorumStateResolver
 from .utils import polling_loop, tzutc
 from .dcs import Cluster, Leader, Member, RemoteMember
 
@@ -588,7 +589,55 @@ class Ha(object):
         self.state_handler.sync_handler.set_synchronous_standby_names(CaseInsensitiveSet())
 
     def _process_quorum_replication(self) -> None:
-        pass
+        """Process synchronous replication state when quorum commit is requested.
+
+        Synchronous standbys are registered in two places postgresql.conf and DCS. The order of updating them must
+        keep the invariant that `quorum + sync >= len(set(quorum pool)|set(sync pool))`. This is done using
+        :class:`QuorumStateResolver` that given a current state and set of desired synchronous nodes and replication
+        level outputs changes to DCS and synchronous replication in correct order to reach the desired state.
+        In case any of those steps causes an error we can just bail out and let next iteration rediscover the state
+        and retry necessary transitions.
+        """
+        min_sync = self.global_config.min_synchronous_nodes
+        sync_wanted = self.global_config.synchronous_node_count
+
+        leader = self.cluster.sync.leader or self.state_handler.name
+        if self.cluster.sync.is_empty:
+            if not self.dcs.write_sync_state(leader, None, 0, index=self.cluster.sync.index):
+                return logger.warning("Updating sync state failed")
+            self.load_cluster_from_dcs()
+
+        transition = 'restart'
+        while transition == 'restart':
+            sync_state = self.state_handler.sync_handler.current_state(self.cluster)
+            for transition, leader, num, nodes in QuorumStateResolver(leader=leader,
+                                                                      quorum=self.cluster.sync.quorum,
+                                                                      voters=self.cluster.sync.voters,
+                                                                      numsync=sync_state['numsync'],
+                                                                      sync=sync_state['sync'],
+                                                                      numsync_confirmed=sync_state['numsync_confirmed'],
+                                                                      active=sync_state['active'],
+                                                                      sync_wanted=sync_wanted,
+                                                                      leader_wanted=self.state_handler.name):
+                if transition == 'quorum':
+                    logger.info("Setting leader to %s, quorum to %d of %d (%s)",
+                                leader, num, len(nodes), ", ".join(sorted(nodes)))
+                    if not self.dcs.write_sync_state(leader, nodes, num, index=self.cluster.sync.index):
+                        return logger.info('Synchronous replication key updated by someone else.')
+                    # TODO: would be nice if we could get the new sync state while writing and update the state locally.
+                    self.load_cluster_from_dcs()  # FIXME: catch DCS error?
+                elif transition == 'sync':
+                    logger.info("Setting synchronous replication to %d of %d (%s)",
+                                num, len(nodes), ", ".join(sorted(nodes)))
+                    # Bump up number of num nodes to meet minimum replication factor. Commits will have to wait until
+                    # we have enough nodes to meet replication target.
+                    if num < min_sync:
+                        logger.warning("Replication factor %d requested, but %d synchronous standbys available."
+                                       " Commits will be delayed.", min_sync + 1, num)
+                        num = min_sync
+                    self.state_handler.sync_handler.set_synchronous_standby_names(nodes, num)
+            else:
+                transition = 'break'  # we need to change transition value if `QuorumStateResolver` produced not changes
 
     def _process_multisync_replication(self) -> None:
         """Process synchronous replication state with one or more sync standbys.
