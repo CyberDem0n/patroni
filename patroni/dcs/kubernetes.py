@@ -1268,25 +1268,28 @@ class Kubernetes(AbstractDCS):
         """Unused"""
 
     def write_sync_state(self, leader: Union[str, None], sync_standby: Union[Collection[str], None],
-                         index: Optional[Union[int, str]] = None) -> bool:
+                         quorum: Union[int, None], index: Optional[Union[int, str]] = None) -> bool:
         """Prepare and write annotations to $SCOPE-sync Endpoint or ConfigMap.
 
         :param leader: name of the leader node that manages /sync key
         :param sync_standby: collection of currently known synchronous standby node names
+        :param quorum: if the node from sync_standby list is doing a leader race it should
+                       see at least quorum other nodes from the sync_standby + leader list
         :param index: last known `resource_version` for conditional update of the object
         :returns: `True` if update was successful
         """
-        sync_state = self.sync_state(leader, sync_standby)
+        sync_state = self.sync_state(leader, sync_standby, quorum)
+        sync_state['quorum'] = str(sync_state['quorum']) if sync_state['quorum'] is not None else None
         return self.patch_or_create(self.sync_path, sync_state, index, False)
 
     def delete_sync_state(self, index: Optional[str] = None) -> bool:
         """Patch annotations of $SCOPE-sync Endpoint or ConfigMap with empty values.
 
-        Effectively it removes "leader" and "sync_standby" annotations from the object.
+        Effectively it removes "leader", "sync_standby", and "quorum" annotations from the object.
         :param index: last known `resource_version` for conditional update of the object
         :returns: `True` if "delete" was successful
         """
-        return self.write_sync_state(None, None, index=index)
+        return self.write_sync_state(None, None, None, index=index)
 
     def watch(self, leader_index, timeout):
         if self.__do_not_watch:
