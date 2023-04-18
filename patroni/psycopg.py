@@ -57,7 +57,7 @@ except ImportError:
         setattr(ret, 'server_version', ret.pgconn.server_version)  # compatibility with psycopg2
         return ret
 
-    def _quote_ident(value: Any, conn: Connection) -> str:
+    def _quote_ident(value: Any, conn: Connection[Any]) -> str:
         """Quote *value* as a SQL identifier.
 
         :param value: value to be quoted.
