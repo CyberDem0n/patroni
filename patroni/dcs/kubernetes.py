@@ -129,10 +129,9 @@ class K8sConfig(object):
 
     def load_kube_config(self, context: Optional[str] = None) -> None:
         with open(os.path.expanduser(KUBE_CONFIG_DEFAULT_LOCATION)) as f:
-            config = yaml.safe_load(f)
+            config: Dict[str, Any] = yaml.safe_load(f)
 
         context = context or config['current-context']
-        assert isinstance(context, str)
         context_value = self._get_by_name(config, 'context', context)
         assert isinstance(context_value, dict)
         cluster = self._get_by_name(config, 'cluster', context_value['cluster'])
@@ -179,11 +178,13 @@ class K8sObject(object):
     @classmethod
     def _wrap(cls, parent: Optional[str], value: Any) -> Any:
         if isinstance(value, dict):
+            data_dict: Dict[str, Any] = value
             # we know that `annotations` and `labels` are dicts and therefore don't want to convert them into K8sObject
-            return value if parent in {'annotations', 'labels'} and \
-                all(isinstance(v, str) for v in value.values()) else cls(value)
+            return data_dict if parent in {'annotations', 'labels'} and \
+                all(isinstance(v, str) for v in data_dict.values()) else cls(data_dict)
         elif isinstance(value, list):
-            return [cls._wrap(None, v) for v in value]
+            data_list: List[Any] = value
+            return [cls._wrap(None, v) for v in data_list]
         else:
             return value
 
@@ -498,7 +499,7 @@ class KubernetesRetriableException(k8s_client.rest.ApiException):
     @property
     def sleeptime(self) -> Optional[int]:
         try:
-            return int(self.headers['retry-after'])
+            return int((self.headers or {}).get('retry-after', ''))
         except Exception:
             return None
 
@@ -695,7 +696,7 @@ class ObjectCache(Thread):
         with self._response_lock:
             if isinstance(self._response, urllib3.HTTPResponse):
                 try:
-                    sock = self._response.connection.sock
+                    sock = self._response.connection.sock if self._response.connection else None
                 except Exception:
                     sock = None
             else:
@@ -841,7 +842,7 @@ class Kubernetes(AbstractDCS):
                 raise RetryFailedError('Exceeded retry deadline')
             self._condition.wait(timeout)
 
-    def _cluster_from_nodes(self, group: str, nodes: Dict[str, K8sObject], pods: List[K8sObject]) -> Cluster:
+    def _cluster_from_nodes(self, group: str, nodes: Dict[str, K8sObject], pods: Collection[K8sObject]) -> Cluster:
         members = [self.member(pod) for pod in pods]
         path = self._base_path[1:] + '-'
         if group:
@@ -930,25 +931,25 @@ class Kubernetes(AbstractDCS):
         return Cluster(initialize, config, leader, last_lsn, members, failover, sync, history, slots, failsafe)
 
     def _cluster_loader(self, path: Dict[str, Any]) -> Cluster:
-        return self._cluster_from_nodes(path['group'], path['nodes'], path['pods'])
+        return self._cluster_from_nodes(path['group'], path['nodes'], path['pods'].values())
 
     def _citus_cluster_loader(self, path: Dict[str, Any]) -> Dict[int, Cluster]:
-        clusters = defaultdict(lambda: {'pods': [], 'nodes': {}})
+        clusters: Dict[str, Dict[str, Dict[str, K8sObject]]] = defaultdict(lambda: defaultdict(dict))
 
-        for pod in path['pods']:
+        for name, pod in path['pods'].items():
             group = pod.metadata.labels.get(self._CITUS_LABEL)
             if group and citus_group_re.match(group):
-                clusters[group]['pods'].append(pod)
+                clusters[group]['pods'][name] = pod
 
         for name, kind in path['nodes'].items():
             group = kind.metadata.labels.get(self._CITUS_LABEL)
             if group and citus_group_re.match(group):
                 clusters[group]['nodes'][name] = kind
-        return {int(group): self._cluster_from_nodes(group, value['nodes'], value['pods'])
+        return {int(group): self._cluster_from_nodes(group, value['nodes'], value['pods'].values())
                 for group, value in clusters.items()}
 
     def __load_cluster(
-            self, group: Optional[str], loader: Callable[[str], Union[Cluster, Dict[int, Cluster]]]
+            self, group: Optional[str], loader: Callable[[Dict[str, Any]], Union[Cluster, Dict[int, Cluster]]]
     ) -> Union[Cluster, Dict[int, Cluster]]:
         assert self._retry.deadline is not None
         stop_time = time.time() + self._retry.deadline
@@ -956,8 +957,8 @@ class Kubernetes(AbstractDCS):
         try:
             with self._condition:
                 self._wait_caches(stop_time)
-                pods = [pod for pod in self._pods.copy().values()
-                        if not group or pod.metadata.labels.get(self._CITUS_LABEL) == group]
+                pods = {name: pod for name, pod in self._pods.copy().items()
+                        if not group or pod.metadata.labels.get(self._CITUS_LABEL) == group}
                 nodes = {name: kind for name, kind in self._kinds.copy().items()
                          if not group or kind.metadata.labels.get(self._CITUS_LABEL) == group}
             return loader({'group': group, 'pods': pods, 'nodes': nodes})
@@ -966,7 +967,7 @@ class Kubernetes(AbstractDCS):
             raise KubernetesError('Kubernetes API is not responding properly')
 
     def _load_cluster(
-            self, path: str, loader: Callable[[str], Union[Cluster, Dict[int, Cluster]]]
+            self, path: str, loader: Callable[[Any], Union[Cluster, Dict[int, Cluster]]]
     ) -> Union[Cluster, Dict[int, Cluster]]:
         group = self._citus_group if path == self.client_path('') else None
         return self.__load_cluster(group, loader)
@@ -1109,15 +1110,19 @@ class Kubernetes(AbstractDCS):
 
     def _write_leader_optime(self, last_lsn: str) -> bool:
         """Unused"""
+        raise NotImplementedError  # pragma: no cover
 
     def _write_status(self, value: str) -> bool:
         """Unused"""
+        raise NotImplementedError  # pragma: no cover
 
     def _write_failsafe(self, value: str) -> bool:
         """Unused"""
+        raise NotImplementedError  # pragma: no cover
 
     def _update_leader(self) -> bool:
         """Unused"""
+        raise NotImplementedError  # pragma: no cover
 
     def _update_leader_with_retry(self, annotations: Dict[str, Any],
                                   resource_version: Optional[str], ips: List[str]) -> bool:
@@ -1229,6 +1234,7 @@ class Kubernetes(AbstractDCS):
 
     def set_failover_value(self, value: str, index: Optional[str] = None) -> bool:
         """Unused"""
+        raise NotImplementedError  # pragma: no cover
 
     def manual_failover(self, leader: str, candidate: str,
                         scheduled_at: Optional[datetime.datetime] = None, index: Optional[str] = None) -> bool:
@@ -1278,6 +1284,7 @@ class Kubernetes(AbstractDCS):
 
     def _delete_leader(self) -> bool:
         """Unused"""
+        raise NotImplementedError  # pragma: no cover
 
     def delete_leader(self, last_lsn: Optional[int] = None) -> bool:
         ret = False
@@ -1303,6 +1310,7 @@ class Kubernetes(AbstractDCS):
 
     def set_sync_state_value(self, value: str, index: Optional[str] = None) -> bool:
         """Unused"""
+        raise NotImplementedError  # pragma: no cover
 
     def write_sync_state(self, leader: Union[str, None], sync_standby: Union[Collection[str], None],
                          index: Optional[Union[int, str]] = None) -> bool:
@@ -1325,7 +1333,7 @@ class Kubernetes(AbstractDCS):
         """
         return self.write_sync_state(None, None, index=index)
 
-    def watch(self, leader_index: str, timeout: float) -> bool:
+    def watch(self, leader_index: Optional[str], timeout: float) -> bool:
         if self.__do_not_watch:
             self.__do_not_watch = False
             return True

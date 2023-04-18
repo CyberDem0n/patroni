@@ -366,8 +366,9 @@ class AbstractEtcdClientWithFailover(abc.ABC, etcd.Client):
     def _update_dns_cache(func: Callable[[str, int], None], machines: List[str]) -> None:
         for url in machines:
             r = urlparse(url)
-            port = r.port or (443 if r.scheme == 'https' else 80)
-            func(r.hostname, port)
+            if r.hostname:
+                port = r.port or (443 if r.scheme == 'https' else 80)
+                func(r.hostname, port)
 
     def _load_machines_cache(self) -> bool:
         """This method should fill up `_machines_cache` from scratch.

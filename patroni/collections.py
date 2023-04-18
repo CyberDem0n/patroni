@@ -1,9 +1,8 @@
 from collections import OrderedDict
-from collections.abc import MutableMapping, MutableSet
-from typing import Any, Collection, Dict, Iterator, Optional
+from typing import Any, Collection, Dict, Iterator, MutableMapping, MutableSet, Optional
 
 
-class CaseInsensitiveSet(MutableSet):
+class CaseInsensitiveSet(MutableSet[str]):
     """A case-insensitive ``set``-like object.
 
     Implements all methods and operations of :class:``MutableSet``. All values are expected to be strings.
@@ -39,7 +38,7 @@ class CaseInsensitiveSet(MutableSet):
         return self <= other
 
 
-class CaseInsensitiveDict(MutableMapping):
+class CaseInsensitiveDict(MutableMapping[str, Any]):
     """A case-insensitive ``dict``-like object.
 
     Implements all methods and operations of :class:``MutableMapping`` as well as dict's :func:``copy``.

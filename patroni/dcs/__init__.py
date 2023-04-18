@@ -825,7 +825,7 @@ class AbstractDCS(abc.ABC):
         return self._last_seen
 
     @abc.abstractmethod
-    def _cluster_loader(self, path: str) -> Cluster:
+    def _cluster_loader(self, path: Any) -> Cluster:
         """Load and build the `Cluster` object from DCS, which
         represents a single Patroni cluster.
 
@@ -833,7 +833,7 @@ class AbstractDCS(abc.ABC):
         :returns: `Cluster`"""
 
     @abc.abstractmethod
-    def _citus_cluster_loader(self, path: str) -> Union[Cluster, Dict[int, Cluster]]:
+    def _citus_cluster_loader(self, path: Any) -> Union[Cluster, Dict[int, Cluster]]:
         """Load and build `Cluster` onjects from DCS that represent all
         Patroni clusters from a single Citus cluster.
 
@@ -842,7 +842,7 @@ class AbstractDCS(abc.ABC):
 
     @abc.abstractmethod
     def _load_cluster(
-            self, path: str, loader: Callable[[str], Union[Cluster, Dict[int, Cluster]]]
+            self, path: str, loader: Callable[[Any], Union[Cluster, Dict[int, Cluster]]]
     ) -> Union[Cluster, Dict[int, Cluster]]:
         """Internally this method should call the `loader` method that
         will build `Cluster` object which represents current state and
@@ -998,11 +998,11 @@ class AbstractDCS(abc.ABC):
         process requests (hopefuly temporary), the ~DCSError exception should be raised"""
 
     @abc.abstractmethod
-    def set_failover_value(self, value: str, index: Optional[_Version] = None) -> bool:
+    def set_failover_value(self, value: str, index: Optional[Any] = None) -> bool:
         """Create or update `/failover` key"""
 
     def manual_failover(self, leader: str, candidate: str, scheduled_at: Optional[datetime.datetime] = None,
-                        index: Optional[_Version] = None) -> bool:
+                        index: Optional[Any] = None) -> bool:
         failover_value = {}
         if leader:
             failover_value['leader'] = leader
@@ -1015,7 +1015,7 @@ class AbstractDCS(abc.ABC):
         return self.set_failover_value(json.dumps(failover_value, separators=(',', ':')), index)
 
     @abc.abstractmethod
-    def set_config_value(self, value: str, index: Optional[_Version] = None) -> bool:
+    def set_config_value(self, value: str, index: Optional[Any] = None) -> bool:
         """Create or update `/config` key"""
 
     @abc.abstractmethod
@@ -1095,7 +1095,7 @@ class AbstractDCS(abc.ABC):
         """"""
 
     @abc.abstractmethod
-    def set_sync_state_value(self, value: str, index: Optional[_Version] = None) -> bool:
+    def set_sync_state_value(self, value: str, index: Optional[Any] = None) -> bool:
         """Set synchronous state in DCS, should be implemented in the child class.
 
         :param value: the new value of /sync key
@@ -1104,10 +1104,10 @@ class AbstractDCS(abc.ABC):
         """
 
     @abc.abstractmethod
-    def delete_sync_state(self, index: Optional[_Version] = None) -> bool:
+    def delete_sync_state(self, index: Optional[Any] = None) -> bool:
         """"""
 
-    def watch(self, leader_index: Optional[_Version], timeout: float) -> bool:
+    def watch(self, leader_index: Optional[Any], timeout: float) -> bool:
         """If the current node is a leader it should just sleep.
         Any other node should watch for changes of leader key with a given timeout
 
