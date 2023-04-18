@@ -37,7 +37,7 @@ def slot_name_from_member_name(member_name: str) -> str:
     are replaced with underscores, other characters are encoded as their unicode codepoint. Name is truncated
     to 64 characters. Multiple different member names may map to a single slot name."""
 
-    def replace_char(match: re.Match[str]) -> str:
+    def replace_char(match: Any) -> str:
         c = match.group(0)
         return '_' if c in '-.' else "u{:04d}".format(ord(c))
 

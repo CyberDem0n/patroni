@@ -3,7 +3,7 @@ from collections.abc import MutableMapping, MutableSet
 from typing import Any, Collection, Dict, Iterator, Optional
 
 
-class CaseInsensitiveSet(MutableSet[str]):
+class CaseInsensitiveSet(MutableSet):
     """A case-insensitive ``set``-like object.
 
     Implements all methods and operations of :class:``MutableSet``. All values are expected to be strings.
@@ -39,7 +39,7 @@ class CaseInsensitiveSet(MutableSet[str]):
         return self <= other
 
 
-class CaseInsensitiveDict(MutableMapping[str, Any]):
+class CaseInsensitiveDict(MutableMapping):
     """A case-insensitive ``dict``-like object.
 
     Implements all methods and operations of :class:``MutableMapping`` as well as dict's :func:``copy``.
