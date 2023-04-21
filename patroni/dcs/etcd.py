@@ -441,11 +441,10 @@ class EtcdClient(AbstractEtcdClientWithFailover):
     ERROR_CLS = EtcdError
 
     def __del__(self) -> None:
-        if self.http is not None:
-            try:
-                self.http.clear()
-            except (ReferenceError, TypeError, AttributeError):
-                pass
+        try:
+            self.http.clear()
+        except (ReferenceError, TypeError, AttributeError):
+            pass
 
     def _prepare_get_members(self, etcd_nodes: int) -> Dict[str, Any]:
         return self._prepare_common_parameters(etcd_nodes)
@@ -562,7 +561,7 @@ class AbstractEtcd(AbstractDCS):
         dns_resolver = DnsCachingResolver()
 
         def create_connection_patched(
-                address: Tuple[str, int], timeout: Any = socket._GLOBAL_DEFAULT_TIMEOUT,
+                address: Tuple[str, int], timeout: Any = object(),
                 source_address: Optional[Any] = None, socket_options: Optional[Collection[Tuple[int, int, int]]] = None
         ) -> socket.socket:
             host, port = address

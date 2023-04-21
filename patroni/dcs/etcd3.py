@@ -10,7 +10,7 @@ import time
 import urllib3
 
 from collections import defaultdict
-from enum import Enum
+from enum import IntEnum
 from urllib3.exceptions import ReadTimeoutError, ProtocolError
 from threading import Condition, Lock, Thread
 from typing import Any, Callable, Collection, Dict, Iterator, List, Optional, Tuple, Type, Union
@@ -33,7 +33,7 @@ class UnsupportedEtcdVersion(PatroniException):
 
 
 # google.golang.org/grpc/codes
-class GRPCCode(Enum):
+class GRPCCode(IntEnum):
     OK = 0
     Canceled = 1
     Unknown = 2
@@ -53,7 +53,7 @@ class GRPCCode(Enum):
     Unauthenticated = 16
 
 
-GRPCcodeToText: Dict[int, str] = {v.value: k for k, v in GRPCCode.__dict__['_member_map_'].items()}
+GRPCcodeToText: Dict[int, str] = {v: k for k, v in GRPCCode.__dict__['_member_map_'].items()}
 
 
 class Etcd3Exception(etcd.EtcdException):
@@ -87,28 +87,28 @@ class Etcd3ClientError(Etcd3Exception):
 
 
 class Unknown(Etcd3ClientError):
-    code = GRPCCode.Unknown.value
+    code = GRPCCode.Unknown
 
 
 class InvalidArgument(Etcd3ClientError):
-    code = GRPCCode.InvalidArgument.value
+    code = GRPCCode.InvalidArgument
 
 
 class DeadlineExceeded(Etcd3ClientError):
-    code = GRPCCode.DeadlineExceeded.value
+    code = GRPCCode.DeadlineExceeded
     error = "context deadline exceeded"
 
 
 class NotFound(Etcd3ClientError):
-    code = GRPCCode.NotFound.value
+    code = GRPCCode.NotFound
 
 
 class FailedPrecondition(Etcd3ClientError):
-    code = GRPCCode.FailedPrecondition.value
+    code = GRPCCode.FailedPrecondition
 
 
 class Unavailable(Etcd3ClientError):
-    code = GRPCCode.Unavailable.value
+    code = GRPCCode.Unavailable
 
 
 # https://github.com/etcd-io/etcd/commits/main/api/v3rpc/rpctypes/error.go
@@ -125,7 +125,7 @@ class AuthFailed(InvalidArgument):
 
 
 class PermissionDenied(Etcd3ClientError):
-    code = GRPCCode.PermissionDenied.value
+    code = GRPCCode.PermissionDenied
     error = "etcdserver: permission denied"
 
 
@@ -134,7 +134,7 @@ class AuthNotEnabled(FailedPrecondition):
 
 
 class InvalidAuthToken(Etcd3ClientError):
-    code = GRPCCode.Unauthenticated.value
+    code = GRPCCode.Unauthenticated
     error = "etcdserver: invalid auth token"
 
 
@@ -158,7 +158,7 @@ def _raise_for_data(data: Union[bytes, str, Dict[str, Union[Any, Dict[str, Any]]
             error = str(data_error)
     except Exception:
         error = str(data)
-        code = GRPCCode.Unknown.value
+        code = GRPCCode.Unknown
     err = errStringToClientError.get(error) or errCodeToClientError.get(code) or Unknown
     return err(code, error, status_code)
 
@@ -631,6 +631,7 @@ class Etcd3(AbstractEtcd):
 
     @property
     def _client(self) -> PatroniEtcd3Client:
+        assert isinstance(self._abstract_client, PatroniEtcd3Client)
         return self._abstract_client
 
     def set_socket_options(self, sock: socket.socket,

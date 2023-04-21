@@ -648,7 +648,8 @@ class Consul(AbstractDCS):
     @catch_consul_errors
     def _delete_leader(self) -> bool:
         cluster = self.cluster
-        if cluster and isinstance(cluster.leader, Leader) and cluster.leader.name == self._name:
+        if cluster and isinstance(cluster.leader, Leader) and\
+                cluster.leader.name == self._name and isinstance(cluster.leader.index, int):
             return self._client.kv.delete(self.leader_path, cas=cluster.leader.index)
         return True
 
