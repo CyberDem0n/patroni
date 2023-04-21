@@ -640,11 +640,11 @@ class Etcd(AbstractEtcd):
 
     def __init__(self, config: Dict[str, Any]) -> None:
         super(Etcd, self).__init__(config, EtcdClient, (etcd.EtcdLeaderElectionInProgress, EtcdRaftInternal))
-        assert isinstance(self._abstract_client, EtcdClient)
         self.__do_not_watch = False
 
     @property
     def _client(self) -> EtcdClient:
+        assert isinstance(self._abstract_client, EtcdClient)
         return self._abstract_client
 
     def set_ttl(self, ttl: int) -> Optional[bool]:
