@@ -472,7 +472,7 @@ class Retry(object):
                  max_jitter: float = 0.8, max_delay: int = 3600,
                  sleep_func: Callable[[Union[int, float]], None] = _sleep,
                  deadline: Optional[Union[int, float]] = None,
-                 retry_exceptions: Union[Type[Exception], Tuple[Type[Exception]]] = PatroniException) -> None:
+                 retry_exceptions: Union[Type[Exception], Tuple[Type[Exception], ...]] = PatroniException) -> None:
         """Create a :class:`Retry` instance for retrying function calls.
 
         :param max_tries: how many times to retry the command. ``-1`` means infinite tries.

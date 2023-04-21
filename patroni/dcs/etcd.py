@@ -166,7 +166,7 @@ class AbstractEtcdClientWithFailover(abc.ABC, etcd.Client):
         """returns: request parameters"""
 
     @abc.abstractmethod
-    def _get_members(self, base_uri: str, **kwargs: Dict[str, Any]) -> List[str]:
+    def _get_members(self, base_uri: str, **kwargs: Any) -> List[str]:
         """returns: list of clientURLs"""
 
     @property
@@ -218,8 +218,9 @@ class AbstractEtcdClientWithFailover(abc.ABC, etcd.Client):
 
     def _do_http_request(self, retry: Optional[Retry], machines_cache: List[str],
                          request_executor: Callable[..., urllib3.response.HTTPResponse],
-                         method: str, path: str, fields: Optional[Dict[str, str]] = None,
-                         **kwargs: Dict[str, Any]) -> urllib3.response.HTTPResponse:
+                         method: str, path: str, fields: Optional[Dict[str, Any]] = None,
+                         **kwargs: Any) -> urllib3.response.HTTPResponse:
+        is_watch_request = isinstance(fields, dict) and fields.get('wait') == 'true'
         if fields is not None:
             kwargs['fields'] = fields
         some_request_failed = False
@@ -242,8 +243,7 @@ class AbstractEtcdClientWithFailover(abc.ABC, etcd.Client):
                     # whether the key didn't received an update or there is a network problem.
                     elif i + 1 < len(machines_cache):
                         self.set_base_uri(machines_cache[i + 1])
-                if (isinstance(fields, dict) and fields.get("wait") == "true"
-                   and isinstance(e, (ReadTimeoutError, ProtocolError))):
+                if is_watch_request and isinstance(e, (ReadTimeoutError, ProtocolError)):
                     logger.debug("Watch timed out.")
                     raise etcd.EtcdWatchTimedOut("Watch timed out: {0}".format(e), cause=e)
                 logger.error("Request to server %s failed: %r", base_uri, e)
@@ -260,7 +260,7 @@ class AbstractEtcdClientWithFailover(abc.ABC, etcd.Client):
         """returns: request_executor"""
 
     def api_execute(self, path: str, method: str, params: Optional[Dict[str, Any]] = None,
-                    timeout: Optional[float] = None) -> urllib3.response.HTTPResponse:
+                    timeout: Optional[float] = None) -> Any:
         retry = params.pop('retry', None) if isinstance(params, dict) else None
 
         # Update machines_cache if previous attempt of update has failed
@@ -471,9 +471,14 @@ class AbstractEtcd(AbstractDCS):
         self._retry = Retry(deadline=config['retry_timeout'], max_delay=1, max_tries=-1,
                             retry_exceptions=retry_errors_cls)
         self._ttl = int(config.get('ttl') or 30)
-        self._client = self.get_etcd_client(config, client_cls)
+        self._abstract_client = self.get_etcd_client(config, client_cls)
         self.__do_not_watch = False
         self._has_failed = False
+
+    @property
+    @abc.abstractmethod
+    def _client(self) -> AbstractEtcdClientWithFailover:
+        """return correct type of etcd client"""
 
     def reload_config(self, config: Dict[str, Any]) -> None:
         super(AbstractEtcd, self).reload_config(config)
@@ -508,8 +513,8 @@ class AbstractEtcd(AbstractDCS):
         except Exception as e:
             self._handle_exception(e, raise_ex=self._client.ERROR_CLS('unexpected error'))
 
-    @staticmethod
-    def set_socket_options(sock: socket.socket, socket_options: Optional[Collection[Tuple[int, int, int]]]) -> None:
+    def set_socket_options(self, sock: socket.socket,
+                           socket_options: Optional[Collection[Tuple[int, int, int]]]) -> None:
         if socket_options:
             for opt in socket_options:
                 sock.setsockopt(*opt)
@@ -635,7 +640,12 @@ class Etcd(AbstractEtcd):
 
     def __init__(self, config: Dict[str, Any]) -> None:
         super(Etcd, self).__init__(config, EtcdClient, (etcd.EtcdLeaderElectionInProgress, EtcdRaftInternal))
+        assert isinstance(self._abstract_client, EtcdClient)
         self.__do_not_watch = False
+
+    @property
+    def _client(self) -> EtcdClient:
+        return self._abstract_client
 
     def set_ttl(self, ttl: int) -> Optional[bool]:
         self.__do_not_watch = super(Etcd, self).set_ttl(ttl)
