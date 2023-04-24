@@ -214,7 +214,7 @@ class WALERestore(object):
                 try:
                     # get the difference in bytes between the current WAL location and the backup start offset
                     con = psycopg.connect(self.leader_connection)
-                    if con.server_version >= 100000:
+                    if getattr(con, 'server_version', 0) >= 100000:
                         wal_name = 'wal'
                         lsn_name = 'lsn'
                     else:
@@ -228,8 +228,9 @@ class WALERestore(object):
                                      " ELSE pg_catalog.pg_{0}_{1}_diff(pg_catalog.pg_current_{0}_{1}(), %s)::bigint"
                                      " END").format(wal_name, lsn_name),
                                     (backup_start_lsn, backup_start_lsn, backup_start_lsn))
-
-                        diff_in_bytes = int(cur.fetchone()[0])
+                        for row in cur:
+                            diff_in_bytes = int(row[0])
+                            break
                 except psycopg.Error:
                     logger.exception('could not determine difference with the leader location')
                     if attempts_no < self.retries:  # retry in case of a temporarily connection issue
