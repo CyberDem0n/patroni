@@ -285,6 +285,8 @@ class TestEtcd3(BaseTestEtcd3):
 
     def test_delete_leader(self):
         self.etcd3.delete_leader()
+        self.etcd3._name = 'other'
+        self.etcd3.delete_leader()
 
     def test_delete_cluster(self):
         self.etcd3.delete_cluster()
