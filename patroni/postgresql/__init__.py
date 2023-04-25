@@ -163,6 +163,11 @@ class Postgresql(object):
         return self._major_version >= 90600
 
     @property
+    def supports_quorum_commit(self) -> bool:
+        """:returns: `True` if quorum commit is supported by Postgres."""
+        return self._major_version >= 100000
+
+    @property
     def cluster_info_query(self):
         """Returns the monitoring query with a fixed number of fields.
 
