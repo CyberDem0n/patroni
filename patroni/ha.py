@@ -637,7 +637,7 @@ class Ha(object):
                         num = min_sync
                     self.state_handler.sync_handler.set_synchronous_standby_names(nodes, num)
             else:
-                transition = 'break'  # we need to change transition value if `QuorumStateResolver` produced not changes
+                transition = 'break'  # we need to change transition value if `QuorumStateResolver` produced no changes
 
     def _process_multisync_replication(self) -> None:
         """Process synchronous replication state with one or more sync standbys.

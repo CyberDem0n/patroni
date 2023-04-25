@@ -74,7 +74,7 @@ Maximum lag on synchronous node
 
 By default Patroni sticks to a node that is declared as ``synchronous`` according to the ``pg_stat_replication`` even when there are other nodes ahead of it. It is done to minimize the number of changes of ``synchronous_standby_names``. To change this behavior one may use ``maximum_lag_on_syncnode`` parameter. It controls how much the replica can lag in to be allowed chosen as synchronous.
 
-Patroni utilize the max replica LSN if there is more than one standby, otherwise it will use leader's current wal LSN. Default is ``-1``, and Patroni will not take action to swap synchronous unhealthy standby when the value is set to 0 or below. Please set the value high enough so Patroni won't swap synchrounous standbys fequently during high transaction volume.
+Patroni utilizes the max replica LSN if there is more than one standby, otherwise it will use leader's current wal LSN. Default is ``-1``, and Patroni will not take action to swap synchronous unhealthy standby when the value is set to 0 or below. Please set the value high enough so Patroni won't swap synchrounous standbys fequently during high transaction volume.
 
 
 Synchronous mode implementation

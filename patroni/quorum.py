@@ -39,7 +39,7 @@ class QuorumStateResolver(object):
     Order of adding or removing nodes from sync and voters depends on the state of synchronous_standby_names:
     When adding new nodes:
         if sync (synchronous_standby_names) is empty:
-            add new nodes first to sync and than to voters when numsync_confirmed > 0
+            add new nodes first to sync and then to voters when numsync_confirmed > 0
         else:
             add new nodes first to voters and than to sync
     When removing nodes:
@@ -137,7 +137,7 @@ class QuorumStateResolver(object):
         """
         if numsync < 0:
             raise QuorumError("Sync %d < 0 of (%s)" % (numsync, sync))
-        if numsync > 0 and numsync > len(sync):
+        if numsync > len(sync):
             raise QuorumError("Sync %s > N of (%s)" % (numsync, sync))
 
         self.numsync = numsync
