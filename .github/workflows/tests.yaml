@@ -131,6 +131,7 @@ jobs:
         path: |
           features/output/*_failed/*postgres?.*
           features/output/*.log
+          features/output/patroni.*
         if-no-files-found: error
         retention-days: 5
     - name: Generate coverage xml report

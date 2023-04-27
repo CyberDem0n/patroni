@@ -215,6 +215,7 @@ class PatroniController(AbstractController):
             'host replication replicator all md5',
             'host all all all md5'
         ]
+        config['log'] = {'level': 'DEBUG'}
 
         if self._context.postgres_supports_ssl and self._context.certfile:
             config['postgresql']['parameters'].update({
@@ -1060,7 +1061,8 @@ def before_all(context):
     try:
         with open(os.devnull, 'w') as null:
             ret = subprocess.call(['openssl', 'req', '-nodes', '-new', '-x509', '-subj', '/CN=batman.patroni',
-                                   '-keyout', context.keyfile, '-out', context.certfile], stdout=null, stderr=null)
+                                   '--addext', 'subjectAltName=IP:127.0.0.1', '-keyout', context.keyfile,
+                                   '-out', context.certfile], stdout=null, stderr=null)
             if ret != 0:
                 raise Exception
     except Exception:
