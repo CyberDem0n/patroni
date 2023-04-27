@@ -215,6 +215,7 @@ class PatroniController(AbstractController):
             'host replication replicator all md5',
             'host all all all md5'
         ]
+        config['log']: {'level': 'DEBUG'}
 
         if self._context.postgres_supports_ssl and self._context.certfile:
             config['postgresql']['parameters'].update({
