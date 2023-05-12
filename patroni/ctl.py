@@ -1396,8 +1396,7 @@ def version(obj: Dict[str, Any], cluster_name: str, group: Optional[int], member
 @click.pass_obj
 def history(obj: Dict[str, Any], cluster_name: str, group: Optional[int], fmt: str) -> None:
     cluster = get_dcs(obj, cluster_name, group).get_cluster()
-    cluster_history = cluster.history.lines if cluster.history else []
-    history: List[List[Any]] = list(map(list, cluster_history))
+    history: List[List[Any]] = list(map(list, cluster.history.lines if cluster.history else []))
     table_header_row = ['TL', 'LSN', 'Reason', 'Timestamp', 'New Leader']
     for line in history:
         if len(line) < len(table_header_row):
