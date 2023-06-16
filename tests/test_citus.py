@@ -254,6 +254,17 @@ class TestGroupTransition(unittest.TestCase):
         self.check_transitions(old, new, ["citus_update_node(2, '3', 5432)", "citus_update_node(1, '2', 5432)"])
         self.assertTrue(new.equals(expected, True))
 
+    def test_switchover_and_new_secondary_primary_gone(self):
+        old = PgDistGroup(0, {PgDistNode(0, '1', 5432, 'demoted', nodeid=1),
+                              PgDistNode(0, '2', 5432, 'secondary', nodeid=2)})
+        new = PgDistGroup(0, {PgDistNode(0, '2', 5432, 'primary'),
+                              PgDistNode(0, '3', 5432, 'secondary')})
+        expected = PgDistGroup(0, {PgDistNode(0, '2', 5432, 'primary', nodeid=1),
+                                   PgDistNode(0, '3', 5432, 'secondary', nodeid=2)})
+        # the secondary record is used to add the new standby and primary record is updated with the new hostname
+        self.check_transitions(old, new, ["citus_update_node(2, '3', 5432)", "citus_update_node(1, '2', 5432)"])
+        self.assertTrue(new.equals(expected, True))
+
     def test_secondary_replaced(self):
         old = PgDistGroup(0, {PgDistNode(0, '1', 5432, 'primary', nodeid=1),
                               PgDistNode(0, '2', 5432, 'secondary', nodeid=2)})
