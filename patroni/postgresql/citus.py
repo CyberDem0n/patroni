@@ -76,10 +76,7 @@ class PgDistGroup(Set[PgDistNode]):
 
         new_primary = self.primary()
         assert new_primary is not None
-        new_primary_old_node = old.get(new_primary)
-
         old_primary = old.primary()
-        old_primary_new_node = old_primary and self.get(old_primary)
 
         gone_nodes = old - self - set([old_primary])
         added_nodes = self - old - set([new_primary])
@@ -95,6 +92,9 @@ class PgDistGroup(Set[PgDistNode]):
                 yield new_primary
         elif old_primary != new_primary:
             self.failover = True
+
+            new_primary_old_node = old.get(new_primary)
+            old_primary_new_node = self.get(old_primary)
 
             # The new primary was registered as a secondary before failover
             if new_primary_old_node:
@@ -134,7 +134,7 @@ class PgDistGroup(Set[PgDistNode]):
                 # We were in the middle of controlled switchover while the primary disappeared.
                 # If there are any gone nodes that can't be reused for new secondaries we will
                 # use one of them to temporary "add" the old primary back as a secondary.
-                if old_primary.role == 'demoted' and not old_primary_new_node and len(gone_nodes) > len(added_nodes):
+                if not old_primary_new_node and old_primary.role == 'demoted' and len(gone_nodes) > len(added_nodes):
                     old_primary_new_node = PgDistNode(old_primary.group, old_primary.host,
                                                       old_primary.port, 'secondary')
                     self.add(old_primary_new_node)
