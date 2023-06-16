@@ -339,9 +339,7 @@ class CitusHandler(Thread):
                     if i is None:
                         break
                     task = self._tasks[i]
-                    if task.group in self._pg_dist_group\
-                            and task.event == self._pg_dist_group[task.group].event\
-                            and task.equals(self._pg_dist_group[task.group]):
+                    if task == self._pg_dist_group.get(task.group):
                         self._tasks.pop(i)  # nothing to do because cached version of pg_dist_group already matches
                     else:
                         break
@@ -483,9 +481,7 @@ class CitusHandler(Thread):
                     self._condition.notify()
                     return True
             # Add the task to the list if Worker node state is different from the cached `pg_dist_group`
-            elif self._schedule_load_pg_dist_group\
-                    or task.group not in self._pg_dist_group\
-                    or task != self._pg_dist_group[task.group]\
+            elif self._schedule_load_pg_dist_group or task != self._pg_dist_group.get(task.group)\
                     or self._in_flight and task.group == self._in_flight.group:
                 logger.debug('Adding the new task: %s', task)
                 self._tasks.append(task)
