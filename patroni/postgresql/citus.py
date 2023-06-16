@@ -4,7 +4,7 @@ import time
 
 from threading import Condition, Event, Thread
 from urllib.parse import urlparse
-from typing import Any, Dict, List, Optional, Union, Tuple, TYPE_CHECKING
+from typing import Any, Collection, Dict, Iterator, List, Optional, Union, Set, Tuple, TYPE_CHECKING
 
 from .connection import Connection
 from ..dcs import CITUS_COORDINATOR_GROUP_ID, Cluster
@@ -19,19 +19,167 @@ CITUS_SLOT_NAME_RE = re.compile(r'^citus_shard_(move|split)_slot(_[1-9][0-9]*){2
 logger = logging.getLogger(__name__)
 
 
-class PgDistNode(object):
-    """Represents a single row in the `pg_dist_node` table"""
+class PgDistNode:
 
-    def __init__(self, group: int, host: str, port: int, event: str, nodeid: Optional[int] = None,
-                 timeout: Optional[float] = None, cooldown: Optional[float] = None) -> None:
+    def __init__(self, group: int, host: str, port: int, role: str, nodeid: Optional[int] = None) -> None:
         self.group = group
-        # A weird way of pausing client connections by adding the `-demoted` suffix to the hostname
-        self.host = host + ('-demoted' if event == 'before_demote' else '')
+        self.host = host
         self.port = port
+        self.role = role
+        self.nodeid = nodeid
+
+    def __eq__(self, other: Any) -> bool:
+        return isinstance(other, PgDistNode) and self.host == other.host and self.port == other.port
+
+    def __ne__(self, other: Any) -> bool:
+        return not self == other
+
+    def __str__(self) -> str:
+        return ('PgDistNode(nodeid={0},group={1},host={2},port={3},role={4})'
+                .format(self.nodeid, self.group, self.host, self.port, self.role))
+
+    def __repr__(self) -> str:
+        return str(self)
+
+    def __hash__(self):
+        return hash((self.host, self.port))
+
+    def is_primary(self) -> bool:
+        return self.role in ('primary', 'demoted')
+
+
+class PgDistGroup(Set[PgDistNode]):
+
+    def __init__(self, group: int, nodes: Optional[Collection[PgDistNode]] = None) -> None:
+        self.failover = False
+        self.group = group
+
+        if nodes:
+            self.update(nodes)
+
+    @staticmethod
+    def _node_hash(node: PgDistNode, include_nodeid: bool = False) -> Tuple[str, int, str, Optional[int]]:
+        return node.host, node.port, node.role, (node.nodeid if include_nodeid else None)
+
+    def equals(self, other: 'PgDistGroup', check_nodeid: bool = False) -> bool:
+        return set(self._node_hash(v, check_nodeid) for v in self)\
+            == set(self._node_hash(v, check_nodeid) for v in other)
+
+    def primary(self) -> Optional[PgDistNode]:
+        return next(iter(v for v in self if v.is_primary()), None)
+
+    def get(self, value: PgDistNode) -> Optional[PgDistNode]:
+        return next(iter(v for v in self if v == value), None)
+
+    def transition(self, old: 'PgDistGroup') -> Iterator[PgDistNode]:
+        self.failover = old.failover
+
+        new_primary = self.primary()
+        assert new_primary is not None
+        new_primary_old_node = old.get(new_primary)
+
+        old_primary = old.primary()
+        old_primary_new_node = old_primary and self.get(old_primary)
+
+        gone_nodes = old - self - set([old_primary])
+        added_nodes = self - old - set([new_primary])
+
+        if not old_primary:
+            yield new_primary
+        elif old_primary == new_primary:
+            new_primary.nodeid = old_primary.nodeid
+            # Controlled switchover with pausing client connections.
+            # Achived by updating the primary row and putting hostname = '${host}-demoted' in a transaction.
+            if old_primary.role != new_primary.role:
+                self.failover = True
+                yield new_primary
+        elif old_primary != new_primary:
+            self.failover = True
+
+            # The new primary was registered as a secondary before failover
+            if new_primary_old_node:
+                new_node = None
+                # Old primary is gone (failover) and some new secondaries were added.
+                # We can use the row of promoted secondary to add the new secondary.
+                if not old_primary_new_node and added_nodes:
+                    new_node = added_nodes.pop()
+                    new_node.nodeid = new_primary_old_node.nodeid
+                    yield new_node
+                # In opposite case we need to change the primary record to '${host}-demoted:${port}'
+                # before we can put its host:port to the row of promoted secondary.
+                elif old_primary.role == 'primary':
+                    old_primary.role = 'demoted'
+                    yield old_primary
+
+                # The old primary is gone and the promoted secondary row wasn't yet used.
+                if not old_primary_new_node and not new_node:
+                    # We have to "add" the gone primary to the row of promoted secondary because
+                    # nodes could not be removed while the metadata isn't synced.
+                    old_primary_new_node = PgDistNode(old_primary.group, old_primary.host,
+                                                      old_primary.port, new_primary_old_node.role)
+                    self.add(old_primary_new_node)
+
+                # put the old primary instead of promoted secondary
+                if old_primary_new_node:
+                    old_primary_new_node.nodeid = new_primary_old_node.nodeid
+                    yield old_primary_new_node
+
+            # update the primary record with the new information
+            new_primary.nodeid = old_primary.nodeid
+            yield new_primary
+
+            # The new primary was never registered as a standby and there are secondaries that gone away.
+            # Since nodes can't be removed while metadate isn't synced we have to temporary "add" the old primary back.
+            if not new_primary_old_node and gone_nodes:
+                # We were in the middle of controlled switchover while the primary disappeared.
+                # If there are any gone nodes that can't be reused for new secondaries we will
+                # use one of them to temporary "add" the old primary back as a secondary.
+                if old_primary.role == 'demoted' and not old_primary_new_node and len(gone_nodes) > len(added_nodes):
+                    old_primary_new_node = PgDistNode(old_primary.group, old_primary.host,
+                                                      old_primary.port, 'secondary')
+                    self.add(old_primary_new_node)
+
+                # Use one of the gone secondaries to put host:port of the old primary there.
+                if old_primary_new_node:
+                    old_primary_new_node.nodeid = gone_nodes.pop().nodeid
+                    yield old_primary_new_node
+
+        # Fill nodeid for standbys in the new topology from the old ones
+        old_replicas = {v: v for v in old if not v.is_primary()}
+        for n in self:
+            if not n.is_primary() and not n.nodeid and n in old_replicas:
+                n.nodeid = old_replicas[n].nodeid
+
+        # Reuse nodeid's of gone standbys to "add" new standbys
+        while gone_nodes and added_nodes:
+            a = added_nodes.pop()
+            a.nodeid = gone_nodes.pop().nodeid
+            yield a
+
+        # Remove remaining nodes that are gone, but only in case if metadata is in sync
+        for g in gone_nodes:
+            if self.failover:  # Otherwise add these nodes to the new topology
+                self.add(g)
+            else:
+                yield PgDistNode(g.group, g.host, g.port, '')
+
+        # Add new nodes to the metadata, but only in case if metadata is in sync
+        for a in added_nodes:
+            if self.failover:
+                self.discard(a)  # Otherwise remove them from the new topology
+            else:
+                yield a
+
+
+class PgDistTask(PgDistGroup):
+
+    def __init__(self, group: int, nodes: Optional[Collection[PgDistNode]], event: str,
+                 timeout: Optional[float] = None, cooldown: Optional[float] = None) -> None:
+        super(PgDistTask, self).__init__(group, nodes)
+
         # Event that is trying to change or changed the given row.
         # Possible values: before_demote, before_promote, after_promote.
         self.event = event
-        self.nodeid = nodeid
 
         # If transaction was started, we need to COMMIT/ROLLBACK before the deadline
         self.timeout = timeout
@@ -52,18 +200,11 @@ class PgDistNode(object):
         self._event.set()
 
     def __eq__(self, other: Any) -> bool:
-        return isinstance(other, PgDistNode) and self.event == other.event\
-            and self.host == other.host and self.port == other.port
+        return isinstance(other, PgDistTask) and self.event == other.event\
+            and super(PgDistTask, self).equals(other)
 
     def __ne__(self, other: Any) -> bool:
         return not self == other
-
-    def __str__(self) -> str:
-        return ('PgDistNode(nodeid={0},group={1},host={2},port={3},event={4})'
-                .format(self.nodeid, self.group, self.host, self.port, self.event))
-
-    def __repr__(self) -> str:
-        return str(self)
 
 
 class CitusHandler(Thread):
@@ -74,11 +215,11 @@ class CitusHandler(Thread):
         self._postgresql = postgresql
         self._config = config
         self._connection = Connection()
-        self._pg_dist_node: Dict[int, PgDistNode] = {}  # Cache of pg_dist_node: {groupid: PgDistNode()}
-        self._tasks: List[PgDistNode] = []  # Requests to change pg_dist_node, every task is a `PgDistNode`
-        self._in_flight: Optional[PgDistNode] = None  # Reference to the `PgDistNode` being changed in a transaction
-        self._schedule_load_pg_dist_node = True  # Flag that "pg_dist_node" should be queried from the database
-        self._condition = Condition()  # protects _pg_dist_node, _tasks, _in_flight, and _schedule_load_pg_dist_node
+        self._pg_dist_group: Dict[int, PgDistTask] = {}  # Cache of pg_dist_node: {groupid: PgDistTask()}
+        self._tasks: List[PgDistTask] = []  # Requests to change pg_dist_group, every task is a `PgDistTask`
+        self._in_flight: Optional[PgDistTask] = None  # Reference to the `PgDistTask` being changed in a transaction
+        self._schedule_load_pg_dist_group = True  # Flag that "pg_dist_group" should be queried from the database
+        self._condition = Condition()  # protects _pg_dist_group, _tasks, _in_flight, and _schedule_load_pg_dist_group
         self.schedule_cache_rebuild()
 
     def is_enabled(self) -> bool:
@@ -101,11 +242,11 @@ class CitusHandler(Thread):
 
     def schedule_cache_rebuild(self) -> None:
         with self._condition:
-            self._schedule_load_pg_dist_node = True
+            self._schedule_load_pg_dist_group = True
 
     def on_demote(self) -> None:
         with self._condition:
-            self._pg_dist_node.clear()
+            self._pg_dist_group.clear()
             self._tasks[:] = []
             self._in_flight = None
 
@@ -123,22 +264,28 @@ class CitusHandler(Thread):
             self.schedule_cache_rebuild()
             raise e
 
-    def load_pg_dist_node(self) -> bool:
+    def load_pg_dist_group(self) -> bool:
         """Read from the `pg_dist_node` table and put it into the local cache"""
 
         with self._condition:
-            if not self._schedule_load_pg_dist_node:
+            if not self._schedule_load_pg_dist_group:
                 return True
-            self._schedule_load_pg_dist_node = False
+            self._schedule_load_pg_dist_group = False
 
         try:
-            cursor = self.query("SELECT nodeid, groupid, nodename, nodeport, noderole"
-                                " FROM pg_catalog.pg_dist_node WHERE noderole = 'primary'")
+            cursor = self.query('SELECT groupid, nodename, nodeport, noderole, nodeid FROM pg_catalog.pg_dist_node')
         except Exception:
             return False
 
+        pg_dist_group: Dict[int, PgDistTask] = {}
+
+        for row in cursor:
+            if row[0] not in pg_dist_group:
+                pg_dist_group[row[0]] = PgDistTask(row[0], nodes=set(), event='after_promote')
+            pg_dist_group[row[0]].add(PgDistNode(*row))
+
         with self._condition:
-            self._pg_dist_node = {r[1]: PgDistNode(r[1], r[2], r[3], 'after_promote', r[0]) for r in cursor}
+            self._pg_dist_group = pg_dist_group
         return True
 
     def sync_pg_dist_node(self, cluster: Cluster) -> None:
@@ -146,7 +293,7 @@ class CitusHandler(Thread):
 
         We can't always rely on REST API calls from worker nodes in order
         to maintain `pg_dist_node`, therefore at least once per heartbeat
-        loop we make sure that workes registered in `self._pg_dist_node`
+        loop we make sure that workes registered in `self._pg_dist_group`
         cache are matching the cluster view from DCS by creating tasks
         the same way as it is done from the REST API."""
 
@@ -157,20 +304,21 @@ class CitusHandler(Thread):
             if not self.is_alive():
                 self.start()
 
-        self.add_task('after_promote', CITUS_COORDINATOR_GROUP_ID, self._postgresql.connection_string)
+        self.add_task('after_promote', CITUS_COORDINATOR_GROUP_ID, cluster,
+                      self._postgresql.name, self._postgresql.connection_string)
 
         for group, worker in cluster.workers.items():
             leader = worker.leader
             if leader and leader.conn_url\
                     and leader.data.get('role') in ('master', 'primary') and leader.data.get('state') == 'running':
-                self.add_task('after_promote', group, leader.conn_url)
+                self.add_task('after_promote', group, worker, leader.name, leader.conn_url)
 
     def find_task_by_group(self, group: int) -> Optional[int]:
         for i, task in enumerate(self._tasks):
             if task.group == group:
                 return i
 
-    def pick_task(self) -> Tuple[Optional[int], Optional[PgDistNode]]:
+    def pick_task(self) -> Tuple[Optional[int], Optional[PgDistTask]]:
         """Returns the tuple(i, task), where `i` - is the task index in the self._tasks list
 
         Tasks are picked by following priorities:
@@ -191,31 +339,45 @@ class CitusHandler(Thread):
                     if i is None:
                         break
                     task = self._tasks[i]
-                    if task == self._pg_dist_node.get(task.group):
-                        self._tasks.pop(i)  # nothing to do because cached version of pg_dist_node already matches
+                    if task.group in self._pg_dist_group\
+                            and task.event == self._pg_dist_group[task.group].event\
+                            and task.equals(self._pg_dist_group[task.group]):
+                        self._tasks.pop(i)  # nothing to do because cached version of pg_dist_group already matches
                     else:
                         break
             task = self._tasks[i] if i is not None else None
 
-            # When tasks are added it could happen that self._pg_dist_node
-            # wasn't ready (self._schedule_load_pg_dist_node is False)
-            # and hence the nodeid wasn't filled.
-            if task and task.group in self._pg_dist_node:
-                task.nodeid = self._pg_dist_node[task.group].nodeid
             return i, task
 
-    def update_node(self, task: PgDistNode) -> None:
-        if task.nodeid is not None:
+    def update_node(self, node: PgDistNode, cooldown: float = 10000) -> None:
+        if node.role not in ('primary', 'secondary', 'demoted'):
+            self.query('SELECT pg_catalog.citus_remove_node(%s, %s)', node.host, node.port)
+        elif node.nodeid is not None:
+            host = node.host + ('-demoted' if node.role == 'demoted' else '')
             self.query('SELECT pg_catalog.citus_update_node(%s, %s, %s, true, %s)',
-                       task.nodeid, task.host, task.port, task.cooldown)
-        elif task.event != 'before_demote':
-            row = self.query("SELECT pg_catalog.citus_add_node(%s, %s, %s, 'primary', 'default')",
-                             task.host, task.port, task.group).fetchone()
+                       node.nodeid, host, node.port, cooldown)
+        elif node.role != 'demoted':
+            row = self.query("SELECT pg_catalog.citus_add_node(%s, %s, %s, %s, 'default')",
+                             node.host, node.port, node.group, node.role).fetchone()
             if row is not None:
-                task.nodeid = row[0]
+                node.nodeid = row[0]
 
-    def process_task(self, task: PgDistNode) -> bool:
-        """Updates a single row in `pg_dist_node` table, optionally in a transaction.
+    def update_group(self, task: PgDistTask, transaction: bool) -> None:
+        current_state = self._in_flight\
+            or self._pg_dist_group.get(task.group)\
+            or PgDistTask(task.group, set(), 'after_promote')
+        transitions = list(task.transition(current_state))
+        if transitions:
+            if not transaction and len(transitions) > 1:
+                self.query('BEGIN')
+            for node in transitions:
+                self.update_node(node, task.cooldown)
+            if not transaction and len(transitions) > 1:
+                task.failover = False
+                self.query('COMMIT')
+
+    def process_task(self, task: PgDistTask) -> bool:
+        """Updates a single row in `pg_dist_group` table, optionally in a transaction.
 
         The transaction is started if we do a demote of the worker node or before promoting the other worker if
         there is no transaction in progress. And, the transaction is committed when the switchover/failover completed.
@@ -226,34 +388,30 @@ class CitusHandler(Thread):
         .. note:
             Read access to `self._in_flight` isn't protected because we know it can't be changed outside of our thread.
 
-        :param task: reference to a :class:`PgDistNode` object that represents a row to be updated/created.
+        :param task: reference to a :class:`PgDistTask` object that represents a row to be updated/created.
         :returns: `True` if the row was succesfully created/updated or transaction in progress
-            was committed as an indicator that the `self._pg_dist_node` cache should be updated,
+            was committed as an indicator that the `self._pg_dist_group` cache should be updated,
             or, if the new transaction was opened, this method returns `False`.
         """
 
         if task.event == 'after_promote':
-            # The after_promote may happen without previous before_demote and/or
-            # before_promore.  In this case we just call self.update_node() method.
-            # If there is a transaction in progress, it could be that it already did
-            # required changes and we can simply COMMIT.
-            if not self._in_flight or self._in_flight.host != task.host or self._in_flight.port != task.port:
-                self.update_node(task)
+            self.update_group(task, self._in_flight is not None)
             if self._in_flight:
                 self.query('COMMIT')
+            task.failover = False
             return True
         else:  # before_demote, before_promote
             if task.timeout:
                 task.deadline = time.time() + task.timeout
             if not self._in_flight:
                 self.query('BEGIN')
-            self.update_node(task)
+            self.update_group(task, True)
         return False
 
     def process_tasks(self) -> None:
         while True:
             # Read access to `_in_flight` isn't protected because we know it can't be changed outside of our thread.
-            if not self._in_flight and not self.load_pg_dist_node():
+            if not self._in_flight and not self.load_pg_dist_group():
                 break
 
             i, task = self.pick_task()
@@ -267,7 +425,7 @@ class CitusHandler(Thread):
             with self._condition:
                 if self._tasks:
                     if update_cache:
-                        self._pg_dist_node[task.group] = task
+                        self._pg_dist_group[task.group] = task
 
                     if update_cache is False:  # an indicator that process_tasks has started a transaction
                         self._in_flight = task
@@ -282,7 +440,7 @@ class CitusHandler(Thread):
         while True:
             try:
                 with self._condition:
-                    if self._schedule_load_pg_dist_node:
+                    if self._schedule_load_pg_dist_group:
                         timeout = -1
                     elif self._in_flight:
                         timeout = self._in_flight.deadline - time.time() if self._tasks else None
@@ -299,20 +457,20 @@ class CitusHandler(Thread):
             except Exception:
                 logger.exception('run')
 
-    def _add_task(self, task: PgDistNode) -> bool:
+    def _add_task(self, task: PgDistTask) -> bool:
         with self._condition:
             i = self.find_task_by_group(task.group)
 
-            # The `PgDistNode.timeout` == None is an indicator that it was scheduled from the sync_pg_dist_node().
+            # The `PgDistTask.timeout` == None is an indicator that it was scheduled from the sync_pg_dist_group().
             if task.timeout is None:
                 # We don't want to override the already existing task created from REST API.
                 if i is not None and self._tasks[i].timeout is not None:
                     return False
 
                 # There is a little race condition with tasks created from REST API - the call made "before" the member
-                # key is updated in DCS. Therefore it is possible that :func:`sync_pg_dist_node` will try to create a
+                # key is updated in DCS. Therefore it is possible that :func:`sync_pg_dist_group` will try to create a
                 # task based on the outdated values of "state"/"role". To solve it we introduce an artificial timeout.
-                # Only when the timeout is reached new tasks could be scheduled from sync_pg_dist_node()
+                # Only when the timeout is reached new tasks could be scheduled from sync_pg_dist_group()
                 if self._in_flight and self._in_flight.group == task.group and self._in_flight.timeout is not None\
                         and self._in_flight.deadline > time.time():
                     return False
@@ -324,8 +482,10 @@ class CitusHandler(Thread):
                     self._tasks[i] = task
                     self._condition.notify()
                     return True
-            # Add the task to the list if Worker node state is different from the cached `pg_dist_node`
-            elif self._schedule_load_pg_dist_node or task != self._pg_dist_node.get(task.group)\
+            # Add the task to the list if Worker node state is different from the cached `pg_dist_group`
+            elif self._schedule_load_pg_dist_group\
+                    or task.group not in self._pg_dist_group\
+                    or task != self._pg_dist_group[task.group]\
                     or self._in_flight and task.group == self._in_flight.group:
                 logger.debug('Adding the new task: %s', task)
                 self._tasks.append(task)
@@ -333,17 +493,28 @@ class CitusHandler(Thread):
                 return True
         return False
 
-    def add_task(self, event: str, group: int, conn_url: str,
-                 timeout: Optional[float] = None, cooldown: Optional[float] = None) -> Optional[PgDistNode]:
+    @staticmethod
+    def _pg_dist_node(group: int, role: str, conn_url: str) -> Optional[PgDistNode]:
         try:
             r = urlparse(conn_url)
+            if r.hostname:
+                return PgDistNode(group, r.hostname, r.port or 5432, role)
         except Exception as e:
-            return logger.error('Failed to parse connection url %s: %r', conn_url, e)
-        host = r.hostname
-        if host:
-            port = r.port or 5432
-            task = PgDistNode(group, host, port, event, timeout=timeout, cooldown=cooldown)
-            return task if self._add_task(task) else None
+            logger.error('Failed to parse connection url %s: %r', conn_url, e)
+
+    def add_task(self, event: str, group: int, cluster: Cluster, leader_name: str, leader_url: str,
+                 timeout: Optional[float] = None, cooldown: Optional[float] = None) -> Optional[PgDistTask]:
+        primary = self._pg_dist_node(group, 'demoted' if event == 'before_demote' else 'primary', leader_url)
+        if not primary:
+            return
+
+        task = PgDistTask(group, {primary}, event=event, timeout=timeout, cooldown=cooldown)
+        for member in cluster.members:
+            secondary = self._pg_dist_node(group, 'secondary', member.conn_url)\
+                if member.name != leader_name and member.is_running and member.conn_url else None
+            if secondary:
+                task.add(secondary)
+        return task if self._add_task(task) else None
 
     def handle_event(self, cluster: Cluster, event: Dict[str, Any]) -> None:
         if not self.is_alive():
@@ -351,10 +522,10 @@ class CitusHandler(Thread):
 
         worker = cluster.workers.get(event['group'])
         if not (worker and worker.leader and worker.leader.name == event['leader'] and worker.leader.conn_url):
-            return
+            return logger.info('Discarding event %s', event)
 
-        task = self.add_task(event['type'], event['group'],
-                             worker.leader.conn_url,
+        task = self.add_task(event['type'], event['group'], worker,
+                             worker.leader.name, worker.leader.conn_url,
                              event['timeout'], event['cooldown'] * 1000)
         if task and event['type'] == 'before_demote':
             task.wait()
