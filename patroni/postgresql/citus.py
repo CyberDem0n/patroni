@@ -40,7 +40,7 @@ class PgDistNode:
     def __repr__(self) -> str:
         return str(self)
 
-    def __hash__(self):
+    def __hash__(self) -> int:
         return hash((self.host, self.port))
 
     def is_primary(self) -> bool:
@@ -77,8 +77,8 @@ class PgDistGroup(Set[PgDistNode]):
         assert new_primary is not None
         old_primary = old.primary()
 
-        gone_nodes = old - self - set([old_primary])
-        added_nodes = self - old - set([new_primary])
+        gone_nodes = old - self - {old_primary}
+        added_nodes = self - old - {new_primary}
 
         if not old_primary:
             yield new_primary
@@ -130,7 +130,7 @@ class PgDistGroup(Set[PgDistNode]):
             yield new_primary
 
             # The new primary was never registered as a standby and there are secondaries that gone away.
-            # Since nodes can't be removed while metadate isn't synced we have to temporary "add" the old primary back.
+            # Since nodes can't be removed while metadata isn't synced we have to temporary "add" the old primary back.
             if not new_primary_old_node and gone_nodes:
                 # We were in the middle of controlled switchover while the primary disappeared.
                 # If there are any gone nodes that can't be reused for new secondaries we will
