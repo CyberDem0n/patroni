@@ -20,14 +20,48 @@ logger = logging.getLogger(__name__)
 
 
 class PgDistNode:
+    """Represents a single row in "pg_dist_node" table.
+
+    .. note::
+
+        Unlike "noderole" possible values of ``role`` are 'primary', 'secondary', and 'demoted'.
+        The last one is used to pause client connections on the coordinator to the worker by
+        appending '-demoted' suffix to the "nodename". The actual "noderole" in DB remains 'primary'.
+
+    :ivar host: "nodename" value
+    :ivar port: "nodeport" value
+    :ivar role: "noderole" value
+    :ivar nodeid: "nodeid" value
+    """
 
     def __init__(self, host: str, port: int, role: str, nodeid: Optional[int] = None) -> None:
+        """Create a :class:`PgDistNode` object based on given arguments.
+
+        :param host: "nodename" of the Citus coordinator or worker.
+        :param port: "nodeport" of the Citus coordinator or worker.
+        :param role: "noderole" value.
+        :param nodeid: id of the row in the "pg_dist_node".
+        """
         self.host = host
         self.port = port
         self.role = role
         self.nodeid = nodeid
 
+    def __hash__(self) -> int:
+        """Defines a hash function to put :class:`PgDistNode` objects to :class:`PgDistGroup` set-like object.
+
+        We use (*host*, *port*) tuple here because it is one of the UNIQUE constraints on the "pg_dist_node" table.
+        The *role* value is irrelevant here because nodes may change their roles.
+        """
+        return hash((self.host, self.port))
+
     def __eq__(self, other: Any) -> bool:
+        """Defines a comparison function.
+
+        It is used exclusively to support overriden :func:``PgDistNode.__hash__``.
+
+        :returns: ``True`` if *host* and *port* between two instances are the same.
+        """
         return isinstance(other, PgDistNode) and self.host == other.host and self.port == other.port
 
     def __ne__(self, other: Any) -> bool:
@@ -40,16 +74,36 @@ class PgDistNode:
     def __repr__(self) -> str:
         return str(self)
 
-    def __hash__(self) -> int:
-        return hash((self.host, self.port))
-
     def is_primary(self) -> bool:
+        """Checks whether this object represents "primary" in a corresponding group.
+
+        :returns: `True` if this object represents "primary".
+        """
         return self.role in ('primary', 'demoted')
 
 
 class PgDistGroup(Set[PgDistNode]):
+    """A :class:`set`-like object that represents a Citus group in "pg_dist_node" table.
+
+    This class implements a set of methods to compare topology and if it is necessary
+    to transition from the old to the new topology in a "safe" manner:
+    - register new primary/secondaries
+    - replace gone secondaries with added
+    - failover and switchover
+
+    Typically there will be at least one :class:`PgDistNode` object registered ('primary').
+    In adding to that there could be some "secondaries".
+
+    :ivar failover: whether as a result of :func:`transition` method call the "primary" row should be updated.
+    :ivar group: the "groupid" from "pg_dist_node"
+    """
 
     def __init__(self, group: int, nodes: Optional[Collection[PgDistNode]] = None) -> None:
+        """Creates a :class:`PgDistGroup` object based on given arguments.
+
+        :param group: the groupid from "pg_dist_node".
+        :param nodes: a collection of :class:`PgDistNode` objects that belog to a *group*.
+        """
         self.failover = False
         self.group = group
 
@@ -58,19 +112,77 @@ class PgDistGroup(Set[PgDistNode]):
 
     @staticmethod
     def _node_hash(node: PgDistNode, include_nodeid: bool = False) -> Tuple[str, int, str, Optional[int]]:
+        """Helper function to compare two :class:`PgDistGroup` objects.
+
+        .. note::
+
+            *include_nodeid* is set to `True` only in unit-tests.
+
+        :param node: the PgDistNode we want to build hash for.
+        :param include_nodeid: whether *nodeid* should be taken into account when comparison is performed.
+        :returns: :class:`tuple` object with *host*, *port*, *role*, and optionally *nodeid*
+        """
         return node.host, node.port, node.role, (node.nodeid if include_nodeid else None)
 
     def equals(self, other: 'PgDistGroup', check_nodeid: bool = False) -> bool:
+        """Compares two :class:`PgDistGroup` objects.
+
+        .. note::
+
+            Normally only *host*, *port*, and *role* values are compared for all :class:`PgDistNode` objects.
+            But, optionally it can also compare *nodeid* if *check_nodeid* if set to `True` (used only in unit-tests).
+
+        :param other: what we want to compare with.
+        :param check_nodeid: whether *nodeid* should be compared in addition to *host*, *port*, and *role*.
+        :returns: `True` if all two objects are identical.
+        """
         return set(self._node_hash(v, check_nodeid) for v in self)\
             == set(self._node_hash(v, check_nodeid) for v in other)
 
     def primary(self) -> Optional[PgDistNode]:
+        """Finds and returns :class:`PgDistNode` object that represents "primary"."""
         return next(iter(v for v in self if v.is_primary()), None)
 
     def get(self, value: PgDistNode) -> Optional[PgDistNode]:
+        """Performs a lookup of the actual value in a given set.
+
+        .. note::
+            It is necessary because :func:`__hash__` and :func:`__eq__` methods in :class:`PgDistNode`
+            are redefined and effectively they check only *host* and *port* attributes.
+
+        :param value: the key we search for.
+        :returns: the actual value from this :class:`set` object.
+        """
         return next(iter(v for v in self if v == value), None)
 
     def transition(self, old: 'PgDistGroup') -> Iterator[PgDistNode]:
+        """Compares this topology with the old one and yields transitions that transform the old to the new one.
+
+        .. note::
+
+            In addition to the yielding transactions this method fills up *nodeid*
+            attribute for nodes that are presented in the old and in the new topology.
+
+            There are a few simple rules/constraints that are imposed by Citus and must be followed:
+            - adding/removing nodes is only possible when metadata is synced to all registered "priorities".
+            - the "primary" row in "pg_dist_node" always keeps the nodeid (unless it is
+              removed, but it is not supported by Patroni).
+            - "nodename", "nodeport" must be unique across all rows in the "pg_dist_node".
+            - updating "broken" nodes always works and metadata is synced asynchnonously after commit.
+
+        Following these rules below is an example of the switchover between node1 (primary) and node2 (secondary).
+
+        :Example:
+
+            BEGIN;
+                SELECT citus_update_node(4, 'node1-demoted', 5432);
+                SELECT citus_update_node(5, 'node1', 5432);
+                SELECT citus_update_node(4, 'node2', 5432);
+            COMMIT;
+
+        :param old: the last know topology registered in "pg_dist_node" for a given *group*
+        :yields: :class:`PgDistNode` objects that must be updated/added/removed in "pg_dist_node".
+        """
         self.failover = old.failover
 
         new_primary = self.primary()
@@ -172,9 +284,26 @@ class PgDistGroup(Set[PgDistNode]):
 
 
 class PgDistTask(PgDistGroup):
+    """A "task" that represents the current or desired state of "pg_dist_node" for a provided *group*.
+
+    :ivar group: the "groupid" in "pg_dist_node".
+    :ivar event: an "event" that resulted in creating this task.
+                 possible values: "before_demote", "before_promote", "after_promote".
+    :ivar timeout: a transaction timeout if the task resulted in starting a transaction.
+    :ivar cooldown: the cooldown value for ``citus_update_node()`` UDF call.
+    :ivar deadline: the time in unix seconds when the transaction is allowed to be rolled back.
+    """
 
     def __init__(self, group: int, nodes: Optional[Collection[PgDistNode]], event: str,
                  timeout: Optional[float] = None, cooldown: Optional[float] = None) -> None:
+        """Create a :class:`PgDistTask` object based on given arguments.
+
+        :param group: the groupid from "pg_dist_node".
+        :param nodes: a collection of :class:`PgDistNode` objects that belog to a *group*.
+        :param event: an "event" that resulted in creating this task.
+        :param timeout: a transaction timeout if the task resulted in starting a transaction.
+        :param cooldown: the cooldown value for ``citus_update_node()`` UDF call.
+        """
         super(PgDistTask, self).__init__(group, nodes)
 
         # Event that is trying to change or changed the given row.
@@ -194,9 +323,11 @@ class PgDistTask(PgDistGroup):
         self._event = Event()
 
     def wait(self) -> None:
+        """Wait until this task is processed by a dedicated thread."""
         self._event.wait()
 
     def wakeup(self) -> None:
+        """Notify a thread that created a task that it was processed."""
         self._event.set()
 
     def __eq__(self, other: Any) -> bool:
