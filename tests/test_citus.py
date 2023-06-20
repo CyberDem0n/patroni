@@ -180,7 +180,7 @@ class TestCitus(BaseTestPostgresql):
 class TestGroupTransition(unittest.TestCase):
     nodeid = 100
 
-    def map_to_sql(self, transition: PgDistNode) -> str:
+    def map_to_sql(self, group: int, transition: PgDistNode) -> str:
         if transition.role not in ('primary', 'demoted', 'secondary'):
             return "citus_remove_node('{0}', {1})".format(transition.host, transition.port)
         elif transition.nodeid:
@@ -191,7 +191,7 @@ class TestGroupTransition(unittest.TestCase):
             self.nodeid += 1
 
             return "citus_add_node('{0}', {1}, {2}, '{3}')".format(transition.host, transition.port,
-                                                                   transition.group, transition.role)
+                                                                   group, transition.role)
 
     def check_transitions(self, old_topology: PgDistGroup, new_topology: PgDistGroup,
                           expected_transitions: List[str]) -> None:
@@ -203,28 +203,28 @@ class TestGroupTransition(unittest.TestCase):
             old_node = node.nodeid and next(iter(v for v in check_topology if v.nodeid == node.nodeid), None)
             if old_node:
                 check_topology.discard(old_node)
-            transitions.append(self.map_to_sql(node))
+            transitions.append(self.map_to_sql(new_topology.group, node))
             check_topology.add(node)
         self.assertEqual(transitions, expected_transitions)
 
     def test_new_topology(self):
         old = PgDistGroup(0)
-        new = PgDistGroup(0, {PgDistNode(0, '1', 5432, 'primary'),
-                              PgDistNode(0, '2', 5432, 'secondary')})
-        expected = PgDistGroup(0, {PgDistNode(0, '1', 5432, 'primary', nodeid=100),
-                                   PgDistNode(0, '2', 5432, 'secondary', nodeid=101)})
+        new = PgDistGroup(0, {PgDistNode('1', 5432, 'primary'),
+                              PgDistNode('2', 5432, 'secondary')})
+        expected = PgDistGroup(0, {PgDistNode('1', 5432, 'primary', nodeid=100),
+                                   PgDistNode('2', 5432, 'secondary', nodeid=101)})
         self.check_transitions(old, new,
                                ["citus_add_node('1', 5432, 0, 'primary')",
                                 "citus_add_node('2', 5432, 0, 'secondary')"])
         self.assertTrue(new.equals(expected, True))
 
     def test_switchover(self):
-        old = PgDistGroup(0, {PgDistNode(0, '1', 5432, 'primary', nodeid=1),
-                              PgDistNode(0, '2', 5432, 'secondary', nodeid=2)})
-        new = PgDistGroup(0, {PgDistNode(0, '1', 5432, 'secondary'),
-                              PgDistNode(0, '2', 5432, 'primary')})
-        expected = PgDistGroup(0, {PgDistNode(0, '2', 5432, 'primary', nodeid=1),
-                                   PgDistNode(0, '1', 5432, 'secondary', nodeid=2)})
+        old = PgDistGroup(0, {PgDistNode('1', 5432, 'primary', nodeid=1),
+                              PgDistNode('2', 5432, 'secondary', nodeid=2)})
+        new = PgDistGroup(0, {PgDistNode('1', 5432, 'secondary'),
+                              PgDistNode('2', 5432, 'primary')})
+        expected = PgDistGroup(0, {PgDistNode('2', 5432, 'primary', nodeid=1),
+                                   PgDistNode('1', 5432, 'secondary', nodeid=2)})
         self.check_transitions(old, new,
                                ["citus_update_node(1, '1-demoted', 5432)",
                                 "citus_update_node(2, '1', 5432)",
@@ -232,11 +232,11 @@ class TestGroupTransition(unittest.TestCase):
         self.assertTrue(new.equals(expected, True))
 
     def test_failover(self):
-        old = PgDistGroup(0, {PgDistNode(0, '1', 5432, 'primary', nodeid=1),
-                              PgDistNode(0, '2', 5432, 'secondary', nodeid=2)})
-        new = PgDistGroup(0, {PgDistNode(0, '2', 5432, 'primary')})
-        expected = PgDistGroup(0, {PgDistNode(0, '2', 5432, 'primary', nodeid=1),
-                                   PgDistNode(0, '1', 5432, 'secondary', nodeid=2)})
+        old = PgDistGroup(0, {PgDistNode('1', 5432, 'primary', nodeid=1),
+                              PgDistNode('2', 5432, 'secondary', nodeid=2)})
+        new = PgDistGroup(0, {PgDistNode('2', 5432, 'primary')})
+        expected = PgDistGroup(0, {PgDistNode('2', 5432, 'primary', nodeid=1),
+                                   PgDistNode('1', 5432, 'secondary', nodeid=2)})
         self.check_transitions(old, new,
                                ["citus_update_node(1, '1-demoted', 5432)",
                                 "citus_update_node(2, '1', 5432)",
@@ -244,57 +244,57 @@ class TestGroupTransition(unittest.TestCase):
         self.assertTrue(new.equals(expected, True))
 
     def test_failover_and_new_secondary(self):
-        old = PgDistGroup(0, {PgDistNode(0, '1', 5432, 'primary', nodeid=1),
-                              PgDistNode(0, '2', 5432, 'secondary', nodeid=2)})
-        new = PgDistGroup(0, {PgDistNode(0, '2', 5432, 'primary'),
-                              PgDistNode(0, '3', 5432, 'secondary')})
-        expected = PgDistGroup(0, {PgDistNode(0, '2', 5432, 'primary', nodeid=1),
-                                   PgDistNode(0, '3', 5432, 'secondary', nodeid=2)})
+        old = PgDistGroup(0, {PgDistNode('1', 5432, 'primary', nodeid=1),
+                              PgDistNode('2', 5432, 'secondary', nodeid=2)})
+        new = PgDistGroup(0, {PgDistNode('2', 5432, 'primary'),
+                              PgDistNode('3', 5432, 'secondary')})
+        expected = PgDistGroup(0, {PgDistNode('2', 5432, 'primary', nodeid=1),
+                                   PgDistNode('3', 5432, 'secondary', nodeid=2)})
         # the secondary record is used to add the new standby and primary record is updated with the new hostname
         self.check_transitions(old, new, ["citus_update_node(2, '3', 5432)", "citus_update_node(1, '2', 5432)"])
         self.assertTrue(new.equals(expected, True))
 
     def test_switchover_and_new_secondary_primary_gone(self):
-        old = PgDistGroup(0, {PgDistNode(0, '1', 5432, 'demoted', nodeid=1),
-                              PgDistNode(0, '2', 5432, 'secondary', nodeid=2)})
-        new = PgDistGroup(0, {PgDistNode(0, '2', 5432, 'primary'),
-                              PgDistNode(0, '3', 5432, 'secondary')})
-        expected = PgDistGroup(0, {PgDistNode(0, '2', 5432, 'primary', nodeid=1),
-                                   PgDistNode(0, '3', 5432, 'secondary', nodeid=2)})
+        old = PgDistGroup(0, {PgDistNode('1', 5432, 'demoted', nodeid=1),
+                              PgDistNode('2', 5432, 'secondary', nodeid=2)})
+        new = PgDistGroup(0, {PgDistNode('2', 5432, 'primary'),
+                              PgDistNode('3', 5432, 'secondary')})
+        expected = PgDistGroup(0, {PgDistNode('2', 5432, 'primary', nodeid=1),
+                                   PgDistNode('3', 5432, 'secondary', nodeid=2)})
         # the secondary record is used to add the new standby and primary record is updated with the new hostname
         self.check_transitions(old, new, ["citus_update_node(2, '3', 5432)", "citus_update_node(1, '2', 5432)"])
         self.assertTrue(new.equals(expected, True))
 
     def test_secondary_replaced(self):
-        old = PgDistGroup(0, {PgDistNode(0, '1', 5432, 'primary', nodeid=1),
-                              PgDistNode(0, '2', 5432, 'secondary', nodeid=2)})
-        new = PgDistGroup(0, {PgDistNode(0, '1', 5432, 'primary'),
-                              PgDistNode(0, '3', 5432, 'secondary')})
-        expected = PgDistGroup(0, {PgDistNode(0, '1', 5432, 'primary', nodeid=1),
-                                   PgDistNode(0, '3', 5432, 'secondary', nodeid=2)})
+        old = PgDistGroup(0, {PgDistNode('1', 5432, 'primary', nodeid=1),
+                              PgDistNode('2', 5432, 'secondary', nodeid=2)})
+        new = PgDistGroup(0, {PgDistNode('1', 5432, 'primary'),
+                              PgDistNode('3', 5432, 'secondary')})
+        expected = PgDistGroup(0, {PgDistNode('1', 5432, 'primary', nodeid=1),
+                                   PgDistNode('3', 5432, 'secondary', nodeid=2)})
         self.check_transitions(old, new, ["citus_update_node(2, '3', 5432)"])
         self.assertTrue(new.equals(expected, True))
 
     def test_secondary_repmoved(self):
-        old = PgDistGroup(0, {PgDistNode(0, '1', 5432, 'primary', nodeid=1),
-                              PgDistNode(0, '2', 5432, 'secondary', nodeid=2),
-                              PgDistNode(0, '3', 5432, 'secondary', nodeid=3)})
-        new = PgDistGroup(0, {PgDistNode(0, '1', 5432, 'primary'),
-                              PgDistNode(0, '3', 5432, 'secondary')})
-        expected = PgDistGroup(0, {PgDistNode(0, '1', 5432, 'primary', nodeid=1),
-                                   PgDistNode(0, '3', 5432, 'secondary', nodeid=3)})
+        old = PgDistGroup(0, {PgDistNode('1', 5432, 'primary', nodeid=1),
+                              PgDistNode('2', 5432, 'secondary', nodeid=2),
+                              PgDistNode('3', 5432, 'secondary', nodeid=3)})
+        new = PgDistGroup(0, {PgDistNode('1', 5432, 'primary'),
+                              PgDistNode('3', 5432, 'secondary')})
+        expected = PgDistGroup(0, {PgDistNode('1', 5432, 'primary', nodeid=1),
+                                   PgDistNode('3', 5432, 'secondary', nodeid=3)})
         self.check_transitions(old, new, ["citus_remove_node('2', 5432)"])
         self.assertTrue(new.equals(expected, True))
 
     def test_switchover_and_secondary_removed(self):
-        old = PgDistGroup(0, {PgDistNode(0, '1', 5432, 'primary', nodeid=1),
-                              PgDistNode(0, '2', 5432, 'secondary', nodeid=2),
-                              PgDistNode(0, '3', 5432, 'secondary', nodeid=3)})
-        new = PgDistGroup(0, {PgDistNode(0, '1', 5432, 'secondary'),
-                              PgDistNode(0, '2', 5432, 'primary')})
-        expected = PgDistGroup(0, {PgDistNode(0, '1', 5432, 'secondary', nodeid=2),
-                                   PgDistNode(0, '2', 5432, 'primary', nodeid=1),
-                                   PgDistNode(0, '3', 5432, 'secondary', nodeid=3)})
+        old = PgDistGroup(0, {PgDistNode('1', 5432, 'primary', nodeid=1),
+                              PgDistNode('2', 5432, 'secondary', nodeid=2),
+                              PgDistNode('3', 5432, 'secondary', nodeid=3)})
+        new = PgDistGroup(0, {PgDistNode('1', 5432, 'secondary'),
+                              PgDistNode('2', 5432, 'primary')})
+        expected = PgDistGroup(0, {PgDistNode('1', 5432, 'secondary', nodeid=2),
+                                   PgDistNode('2', 5432, 'primary', nodeid=1),
+                                   PgDistNode('3', 5432, 'secondary', nodeid=3)})
         self.check_transitions(old, new,
                                ["citus_update_node(1, '1-demoted', 5432)",
                                 "citus_update_node(2, '1', 5432)",
@@ -302,13 +302,13 @@ class TestGroupTransition(unittest.TestCase):
         self.assertTrue(new.equals(expected, True))
 
     def test_switchover_and_new_secondary(self):
-        old = PgDistGroup(0, {PgDistNode(0, '1', 5432, 'primary', nodeid=1),
-                              PgDistNode(0, '2', 5432, 'secondary', nodeid=2)})
-        new = PgDistGroup(0, {PgDistNode(0, '1', 5432, 'secondary'),
-                              PgDistNode(0, '2', 5432, 'primary'),
-                              PgDistNode(0, '3', 5432, 'secondary')})
-        expected = PgDistGroup(0, {PgDistNode(0, '1', 5432, 'secondary', nodeid=2),
-                                   PgDistNode(0, '2', 5432, 'primary', nodeid=1)})
+        old = PgDistGroup(0, {PgDistNode('1', 5432, 'primary', nodeid=1),
+                              PgDistNode('2', 5432, 'secondary', nodeid=2)})
+        new = PgDistGroup(0, {PgDistNode('1', 5432, 'secondary'),
+                              PgDistNode('2', 5432, 'primary'),
+                              PgDistNode('3', 5432, 'secondary')})
+        expected = PgDistGroup(0, {PgDistNode('1', 5432, 'secondary', nodeid=2),
+                                   PgDistNode('2', 5432, 'primary', nodeid=1)})
         self.check_transitions(old, new,
                                ["citus_update_node(1, '1-demoted', 5432)",
                                 "citus_update_node(2, '1', 5432)",
@@ -316,68 +316,68 @@ class TestGroupTransition(unittest.TestCase):
         self.assertTrue(new.equals(expected, True))
 
     def test_failover_to_new_node_secondary_remains(self):
-        old = PgDistGroup(0, {PgDistNode(0, '1', 5432, 'primary', nodeid=1),
-                              PgDistNode(0, '2', 5432, 'secondary', nodeid=2)})
-        new = PgDistGroup(0, {PgDistNode(0, '2', 5432, 'secondary'),
-                              PgDistNode(0, '3', 5432, 'primary')})
-        expected = PgDistGroup(0, {PgDistNode(0, '3', 5432, 'primary', nodeid=1),
-                                   PgDistNode(0, '2', 5432, 'secondary', nodeid=2)})
+        old = PgDistGroup(0, {PgDistNode('1', 5432, 'primary', nodeid=1),
+                              PgDistNode('2', 5432, 'secondary', nodeid=2)})
+        new = PgDistGroup(0, {PgDistNode('2', 5432, 'secondary'),
+                              PgDistNode('3', 5432, 'primary')})
+        expected = PgDistGroup(0, {PgDistNode('3', 5432, 'primary', nodeid=1),
+                                   PgDistNode('2', 5432, 'secondary', nodeid=2)})
         self.check_transitions(old, new, ["citus_update_node(1, '3', 5432)"])
         self.assertTrue(new.equals(expected, True))
 
     def test_failover_to_new_node_secondary_removed(self):
-        old = PgDistGroup(0, {PgDistNode(0, '1', 5432, 'primary', nodeid=1),
-                              PgDistNode(0, '2', 5432, 'secondary', nodeid=2)})
-        new = PgDistGroup(0, {PgDistNode(0, '3', 5432, 'primary')})
-        expected = PgDistGroup(0, {PgDistNode(0, '3', 5432, 'primary', nodeid=1),
-                                   PgDistNode(0, '2', 5432, 'secondary', nodeid=2)})
+        old = PgDistGroup(0, {PgDistNode('1', 5432, 'primary', nodeid=1),
+                              PgDistNode('2', 5432, 'secondary', nodeid=2)})
+        new = PgDistGroup(0, {PgDistNode('3', 5432, 'primary')})
+        expected = PgDistGroup(0, {PgDistNode('3', 5432, 'primary', nodeid=1),
+                                   PgDistNode('2', 5432, 'secondary', nodeid=2)})
         # the secondary record needs to be removed before we update the primary record
         self.check_transitions(old, new, ["citus_update_node(1, '3', 5432)"])
         self.assertTrue(new.equals(expected, True))
 
     def test_switchover_to_new_node_and_secondary_removed(self):
-        old = PgDistGroup(0, {PgDistNode(0, '1', 5432, 'primary', nodeid=1),
-                              PgDistNode(0, '2', 5432, 'secondary', nodeid=2)})
-        new = PgDistGroup(0, {PgDistNode(0, '1', 5432, 'secondary'),
-                              PgDistNode(0, '3', 5432, 'primary')})
-        expected = PgDistGroup(0, {PgDistNode(0, '3', 5432, 'primary', nodeid=1),
-                                   PgDistNode(0, '1', 5432, 'secondary', nodeid=2)})
+        old = PgDistGroup(0, {PgDistNode('1', 5432, 'primary', nodeid=1),
+                              PgDistNode('2', 5432, 'secondary', nodeid=2)})
+        new = PgDistGroup(0, {PgDistNode('1', 5432, 'secondary'),
+                              PgDistNode('3', 5432, 'primary')})
+        expected = PgDistGroup(0, {PgDistNode('3', 5432, 'primary', nodeid=1),
+                                   PgDistNode('1', 5432, 'secondary', nodeid=2)})
         self.check_transitions(old, new, ["citus_update_node(1, '3', 5432)", "citus_update_node(2, '1', 5432)"])
         self.assertTrue(new.equals(expected, True))
 
     def test_switchover_with_pause(self):
-        old = PgDistGroup(0, {PgDistNode(0, '1', 5432, 'primary', nodeid=1),
-                              PgDistNode(0, '2', 5432, 'secondary', nodeid=2)})
-        new = PgDistGroup(0, {PgDistNode(0, '1', 5432, 'demoted')})
-        expected = PgDistGroup(0, {PgDistNode(0, '1', 5432, 'demoted', nodeid=1),
-                                   PgDistNode(0, '2', 5432, 'secondary', nodeid=2)})
+        old = PgDistGroup(0, {PgDistNode('1', 5432, 'primary', nodeid=1),
+                              PgDistNode('2', 5432, 'secondary', nodeid=2)})
+        new = PgDistGroup(0, {PgDistNode('1', 5432, 'demoted')})
+        expected = PgDistGroup(0, {PgDistNode('1', 5432, 'demoted', nodeid=1),
+                                   PgDistNode('2', 5432, 'secondary', nodeid=2)})
         self.check_transitions(old, new, ["citus_update_node(1, '1-demoted', 5432)"])
         self.assertTrue(new.equals(expected, True))
 
     def test_switchover_after_paused_connections(self):
-        old = PgDistGroup(0, {PgDistNode(0, '1', 5432, 'demoted', nodeid=1),
-                              PgDistNode(0, '2', 5432, 'secondary', nodeid=2)})
-        new = PgDistGroup(0, {PgDistNode(0, '2', 5432, 'primary')})
-        expected = PgDistGroup(0, {PgDistNode(0, '1', 5432, 'secondary', nodeid=2),
-                                   PgDistNode(0, '2', 5432, 'primary', nodeid=1)})
+        old = PgDistGroup(0, {PgDistNode('1', 5432, 'demoted', nodeid=1),
+                              PgDistNode('2', 5432, 'secondary', nodeid=2)})
+        new = PgDistGroup(0, {PgDistNode('2', 5432, 'primary')})
+        expected = PgDistGroup(0, {PgDistNode('1', 5432, 'secondary', nodeid=2),
+                                   PgDistNode('2', 5432, 'primary', nodeid=1)})
         self.check_transitions(old, new, ["citus_update_node(2, '1', 5432)", "citus_update_node(1, '2', 5432)"])
         self.assertTrue(new.equals(expected, True))
 
     def test_switchover_to_new_node_after_paused_connections(self):
-        old = PgDistGroup(0, {PgDistNode(0, '1', 5432, 'demoted', nodeid=1),
-                              PgDistNode(0, '2', 5432, 'secondary', nodeid=2)})
-        new = PgDistGroup(0, {PgDistNode(0, '3', 5432, 'primary')})
-        expected = PgDistGroup(0, {PgDistNode(0, '1', 5432, 'secondary', nodeid=2),
-                                   PgDistNode(0, '3', 5432, 'primary', nodeid=1)})
+        old = PgDistGroup(0, {PgDistNode('1', 5432, 'demoted', nodeid=1),
+                              PgDistNode('2', 5432, 'secondary', nodeid=2)})
+        new = PgDistGroup(0, {PgDistNode('3', 5432, 'primary')})
+        expected = PgDistGroup(0, {PgDistNode('1', 5432, 'secondary', nodeid=2),
+                                   PgDistNode('3', 5432, 'primary', nodeid=1)})
         self.check_transitions(old, new, ["citus_update_node(1, '3', 5432)", "citus_update_node(2, '1', 5432)"])
         self.assertTrue(new.equals(expected, True))
 
     def test_switchover_to_new_node_after_paused_connections_secondary_added(self):
-        old = PgDistGroup(0, {PgDistNode(0, '1', 5432, 'demoted', nodeid=1),
-                              PgDistNode(0, '2', 5432, 'secondary', nodeid=2)})
-        new = PgDistGroup(0, {PgDistNode(0, '4', 5432, 'secondary'),
-                              PgDistNode(0, '3', 5432, 'primary')})
-        expected = PgDistGroup(0, {PgDistNode(0, '4', 5432, 'secondary', nodeid=2),
-                                   PgDistNode(0, '3', 5432, 'primary', nodeid=1)})
+        old = PgDistGroup(0, {PgDistNode('1', 5432, 'demoted', nodeid=1),
+                              PgDistNode('2', 5432, 'secondary', nodeid=2)})
+        new = PgDistGroup(0, {PgDistNode('4', 5432, 'secondary'),
+                              PgDistNode('3', 5432, 'primary')})
+        expected = PgDistGroup(0, {PgDistNode('4', 5432, 'secondary', nodeid=2),
+                                   PgDistNode('3', 5432, 'primary', nodeid=1)})
         self.check_transitions(old, new, ["citus_update_node(1, '3', 5432)", "citus_update_node(2, '4', 5432)"])
         self.assertTrue(new.equals(expected, True))

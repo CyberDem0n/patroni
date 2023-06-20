@@ -21,8 +21,7 @@ logger = logging.getLogger(__name__)
 
 class PgDistNode:
 
-    def __init__(self, group: int, host: str, port: int, role: str, nodeid: Optional[int] = None) -> None:
-        self.group = group
+    def __init__(self, host: str, port: int, role: str, nodeid: Optional[int] = None) -> None:
         self.host = host
         self.port = port
         self.role = role
@@ -35,8 +34,8 @@ class PgDistNode:
         return not self == other
 
     def __str__(self) -> str:
-        return ('PgDistNode(nodeid={0},group={1},host={2},port={3},role={4})'
-                .format(self.nodeid, self.group, self.host, self.port, self.role))
+        return ('PgDistNode(nodeid={0},host={1},port={2},role={3})'
+                .format(self.nodeid, self.host, self.port, self.role))
 
     def __repr__(self) -> str:
         return str(self)
@@ -99,12 +98,15 @@ class PgDistGroup(Set[PgDistNode]):
             # The new primary was registered as a secondary before failover
             if new_primary_old_node:
                 new_node = None
-                # Old primary is gone (failover) and some new secondaries were added.
+                # Old primary is gone and some new secondaries were added.
                 # We can use the row of promoted secondary to add the new secondary.
                 if not old_primary_new_node and added_nodes:
                     new_node = added_nodes.pop()
                     new_node.nodeid = new_primary_old_node.nodeid
                     yield new_node
+
+                    # notify _maybe_register_old_primary_as_secondary that the old primary should not be re-registered
+                    old_primary.role = 'secondary'
                 # In opposite case we need to change the primary record to '${host}-demoted:${port}'
                 # before we can put its host:port to the row of promoted secondary.
                 elif old_primary.role == 'primary':
@@ -115,8 +117,7 @@ class PgDistGroup(Set[PgDistNode]):
                 if not old_primary_new_node and not new_node:
                     # We have to "add" the gone primary to the row of promoted secondary because
                     # nodes could not be removed while the metadata isn't synced.
-                    old_primary_new_node = PgDistNode(old_primary.group, old_primary.host,
-                                                      old_primary.port, new_primary_old_node.role)
+                    old_primary_new_node = PgDistNode(old_primary.host, old_primary.port, new_primary_old_node.role)
                     self.add(old_primary_new_node)
 
                 # put the old primary instead of promoted secondary
@@ -135,8 +136,7 @@ class PgDistGroup(Set[PgDistNode]):
                 # If there are any gone nodes that can't be reused for new secondaries we will
                 # use one of them to temporary "add" the old primary back as a secondary.
                 if not old_primary_new_node and old_primary.role == 'demoted' and len(gone_nodes) > len(added_nodes):
-                    old_primary_new_node = PgDistNode(old_primary.group, old_primary.host,
-                                                      old_primary.port, 'secondary')
+                    old_primary_new_node = PgDistNode(old_primary.host, old_primary.port, 'secondary')
                     self.add(old_primary_new_node)
 
                 # Use one of the gone secondaries to put host:port of the old primary there.
@@ -161,7 +161,7 @@ class PgDistGroup(Set[PgDistNode]):
             if self.failover:  # Otherwise add these nodes to the new topology
                 self.add(g)
             else:
-                yield PgDistNode(g.group, g.host, g.port, '')
+                yield PgDistNode(g.host, g.port, '')
 
         # Add new nodes to the metadata, but only in case if metadata is in sync
         for a in added_nodes:
@@ -282,7 +282,7 @@ class CitusHandler(Thread):
         for row in cursor:
             if row[0] not in pg_dist_group:
                 pg_dist_group[row[0]] = PgDistTask(row[0], nodes=set(), event='after_promote')
-            pg_dist_group[row[0]].add(PgDistNode(*row))
+            pg_dist_group[row[0]].add(PgDistNode(*row[1:]))
 
         with self._condition:
             self._pg_dist_group = pg_dist_group
@@ -347,7 +347,7 @@ class CitusHandler(Thread):
 
             return i, task
 
-    def update_node(self, node: PgDistNode, cooldown: float = 10000) -> None:
+    def update_node(self, group: int, node: PgDistNode, cooldown: float = 10000) -> None:
         if node.role not in ('primary', 'secondary', 'demoted'):
             self.query('SELECT pg_catalog.citus_remove_node(%s, %s)', node.host, node.port)
         elif node.nodeid is not None:
@@ -356,7 +356,7 @@ class CitusHandler(Thread):
                        node.nodeid, host, node.port, cooldown)
         elif node.role != 'demoted':
             row = self.query("SELECT pg_catalog.citus_add_node(%s, %s, %s, %s, 'default')",
-                             node.host, node.port, node.group, node.role).fetchone()
+                             node.host, node.port, group, node.role).fetchone()
             if row is not None:
                 node.nodeid = row[0]
 
@@ -369,7 +369,7 @@ class CitusHandler(Thread):
             if not transaction and len(transitions) > 1:
                 self.query('BEGIN')
             for node in transitions:
-                self.update_node(node, task.cooldown)
+                self.update_node(task.group, node, task.cooldown)
             if not transaction and len(transitions) > 1:
                 task.failover = False
                 self.query('COMMIT')
@@ -490,23 +490,23 @@ class CitusHandler(Thread):
         return False
 
     @staticmethod
-    def _pg_dist_node(group: int, role: str, conn_url: str) -> Optional[PgDistNode]:
+    def _pg_dist_node(role: str, conn_url: str) -> Optional[PgDistNode]:
         try:
             r = urlparse(conn_url)
             if r.hostname:
-                return PgDistNode(group, r.hostname, r.port or 5432, role)
+                return PgDistNode(r.hostname, r.port or 5432, role)
         except Exception as e:
             logger.error('Failed to parse connection url %s: %r', conn_url, e)
 
     def add_task(self, event: str, group: int, cluster: Cluster, leader_name: str, leader_url: str,
                  timeout: Optional[float] = None, cooldown: Optional[float] = None) -> Optional[PgDistTask]:
-        primary = self._pg_dist_node(group, 'demoted' if event == 'before_demote' else 'primary', leader_url)
+        primary = self._pg_dist_node('demoted' if event == 'before_demote' else 'primary', leader_url)
         if not primary:
             return
 
         task = PgDistTask(group, {primary}, event=event, timeout=timeout, cooldown=cooldown)
         for member in cluster.members:
-            secondary = self._pg_dist_node(group, 'secondary', member.conn_url)\
+            secondary = self._pg_dist_node('secondary', member.conn_url)\
                 if member.name != leader_name and member.is_running and member.conn_url else None
             if secondary:
                 task.add(secondary)
