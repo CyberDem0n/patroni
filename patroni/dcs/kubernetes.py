@@ -75,7 +75,7 @@ class K8sConfig(object):
         pass
 
     def __init__(self) -> None:
-        self.pool_config: Dict[str, Union[str, int]] = {'maxsize': 10, 'num_pools': 10}  # urllib3.PoolManager config
+        self.pool_config: Dict[str, Any] = {'maxsize': 10, 'num_pools': 10}  # urllib3.PoolManager config
         self._token_expires_at = datetime.datetime.max
         self._headers: Dict[str, str] = {}
         self._make_headers()
@@ -277,12 +277,13 @@ class K8sClient(object):
 
         def _get_api_servers(self, api_servers_cache: List[str]) -> List[str]:
             _, per_node_timeout, per_node_retries = self._calculate_timeouts(len(api_servers_cache))
-            kwargs = {'headers': self._make_headers({}), 'preload_content': True, 'retries': per_node_retries,
+            headers = self._make_headers({})
+            kwargs = {'preload_content': True, 'retries': per_node_retries,
                       'timeout': urllib3.Timeout(connect=max(1.0, per_node_timeout / 2.0), total=per_node_timeout)}
             path = self._API_URL_PREFIX + 'default/endpoints/kubernetes'
             for base_uri in api_servers_cache:
                 try:
-                    response = self.pool_manager.request('GET', base_uri + path, **kwargs)
+                    response = self.pool_manager.request('GET', base_uri + path, headers=headers, **kwargs)
                     endpoint = self._handle_server_response(response, True)
                     if TYPE_CHECKING:  # pragma: no cover
                         assert isinstance(endpoint, K8sObject)
@@ -765,7 +766,7 @@ class Kubernetes(AbstractDCS):
             k8s_config.load_kube_config(context=config.get('context', 'kind-kind'))
 
         pod_ip = config.get('pod_ip')
-        self.__ips: List[str] = [] if config.get('patronictl') or not isinstance(pod_ip, str) else [pod_ip]
+        self.__ips: List[str] = [] if self._ctl or not isinstance(pod_ip, str) else [pod_ip]
         self.__ports: List[K8sObject] = []
         ports: List[Dict[str, Any]] = config.get('ports', [{}])
         for p in ports:
@@ -773,7 +774,7 @@ class Kubernetes(AbstractDCS):
             port.update({n: p[n] for n in ('name', 'protocol') if p.get(n)})
             self.__ports.append(k8s_client.V1EndpointPort(**port))
 
-        bypass_api_service = not config.get('patronictl') and config.get('bypass_api_service')
+        bypass_api_service = not self._ctl and config.get('bypass_api_service')
         self._api = CoreV1ApiProxy(config.get('use_endpoints'), bypass_api_service)
         self._should_create_config_service = self._api.use_endpoints
         self.reload_config(config)

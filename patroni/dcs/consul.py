@@ -67,7 +67,7 @@ class HTTPClient(object):
         if ca_cert:
             kwargs['ca_certs'] = ca_cert
         kwargs['cert_reqs'] = ssl.CERT_REQUIRED if verify or ca_cert else ssl.CERT_NONE
-        self.http = urllib3.PoolManager(num_pools=10, maxsize=10, **kwargs)
+        self.http = urllib3.PoolManager(num_pools=10, maxsize=10, headers={}, **kwargs)
         self._ttl = 30
 
     def set_read_timeout(self, timeout: float) -> None:
@@ -400,8 +400,12 @@ class Consul(AbstractDCS):
 
         return Cluster(initialize, config, leader, last_lsn, members, failover, sync, history, slots, failsafe)
 
+    @property
+    def _consistency(self) -> str:
+        return 'consistent' if self._ctl else self._client.consistency
+
     def _cluster_loader(self, path: str) -> Cluster:
-        _, results = self.retry(self._client.kv.get, path, recurse=True)
+        _, results = self.retry(self._client.kv.get, path, recurse=True, consistency=self._consistency)
         if results is None:
             raise NotFound
         nodes = {}
@@ -412,7 +416,7 @@ class Consul(AbstractDCS):
         return self._cluster_from_nodes(nodes)
 
     def _citus_cluster_loader(self, path: str) -> Dict[int, Cluster]:
-        _, results = self.retry(self._client.kv.get, path, recurse=True)
+        _, results = self.retry(self._client.kv.get, path, recurse=True, consistency=self._consistency)
         clusters: Dict[int, Dict[str, Cluster]] = defaultdict(dict)
         for node in results or []:
             key = node['Key'][len(path):].split('/', 1)
