@@ -125,6 +125,9 @@ def install_postgres():
     print('blablablablablabla1')
     print(os.stat('test'))
     print(os.stat('test/postgresql.conf'))
+    os.umask(stat.S_IWGRP | stat.S_IRWXO)
+    os.makedirs('test2')
+    print(os.stat('test2'))
     print('blablablablablabla2')
     sys.exit(0)
 
