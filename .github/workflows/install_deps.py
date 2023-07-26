@@ -120,7 +120,16 @@ def install_postgres():
     bin_dir = os.path.join('pgsql', 'bin')
     for f in os.listdir(bin_dir):
         chmod_755(os.path.join(bin_dir, f))
-    return subprocess.call(['pgsql/bin/postgres', '-V'])
+    subprocess.call(['pgsql/bin/postgres', '-V'])
+    subprocess.call(['pgsql/bin/initdb', '-D', 'test', '--allow-group-access'])
+    print('blablablablablabla1')
+    print(os.stat('test'))
+    print(os.stat('test/postgresql.conf'))
+    os.umask(stat.S_IWGRP | stat.S_IRWXO)
+    os.makedirs('test2')
+    print(os.stat('test2'))
+    print('blablablablablabla2')
+    sys.exit(0)
 
 
 def main():
