@@ -24,7 +24,7 @@ jobs:
       matrix:
         os: [ubuntu]
         python-version: [3.7, '3.10']
-        dcs: [exhibitor]
+        dcs: [etcd3, exhibitor]
 
     steps:
     - uses: actions/checkout@v3
