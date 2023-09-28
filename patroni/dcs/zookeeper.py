@@ -147,10 +147,12 @@ class ZooKeeper(AbstractDCS):
             self.cluster_watcher(None)
 
     def status_watcher(self, event: Optional[WatchedEvent]) -> None:
+        logger.error('status_watcher(%s)', event)
         self._fetch_status = True
         self.event.set()
 
     def cluster_watcher(self, event: Optional[WatchedEvent]) -> None:
+        logger.error('cluster_watcher(%s)', event)
         self._fetch_cluster = True
         if not event or event.state != KazooState.CONNECTED or event.path.startswith(self.client_path('')):
             self.status_watcher(event)
@@ -202,6 +204,7 @@ class ZooKeeper(AbstractDCS):
             return None
 
     def get_status(self, path: str, leader: Optional[Leader]) -> Status:
+        logger.error('get_status(%s)', leader)
         watch = self.status_watcher if not leader or leader.name != self._name else None
 
         status = self.get_node(path + self._STATUS, watch)
