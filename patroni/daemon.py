@@ -55,7 +55,6 @@ class AbstractPatroniDaemon(abc.ABC):
         from patroni.log import PatroniLogger
 
         self.setup_signal_handlers()
-        self._reload_config_args = None
 
         self.logger = PatroniLogger()
         self.config = config
@@ -139,9 +138,7 @@ class AbstractPatroniDaemon(abc.ABC):
         while not self.received_sigterm:
             if self._received_sighup:
                 self._received_sighup = False
-                self._reload_config_args = (True, self.config.reload_local_configuration())
-            if self._reload_config_args:
-                self.reload_config(self._reload_config_args)
+                self.reload_config(True, self.config.reload_local_configuration())
 
             self._run_cycle()
 
