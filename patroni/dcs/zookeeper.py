@@ -337,6 +337,7 @@ class ZooKeeper(AbstractDCS):
         try:
             self._client.retry(self._client.create, self.leader_path, self._name.encode('utf-8'),
                                makepath=True, ephemeral=True)
+            self.cluster_watcher(None)  # the next _load_cluster() call must read from ZooKeeper.
             return True
         except (ConnectionClosedError, RetryFailedError) as e:
             raise ZooKeeperError(e)
