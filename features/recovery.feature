@@ -19,6 +19,9 @@ Feature: recovery
     Given I issue a PATCH request to http://127.0.0.1:8008/config with {"master_start_timeout": 0}
     Then I receive a response code 200
     And Response on GET http://127.0.0.1:8008/config contains master_start_timeout after 10 seconds
+    And "members/postgres0" key in DCS has state=running after 10 seconds 
+    And "members/postgres1" key in DCS has state=running after 10 seconds 
+    And replication works from postgres0 to postgres1 after 15 seconds
     When I kill postmaster on postgres0
     Then postgres1 is a leader after 10 seconds
     And postgres1 role is the primary after 10 seconds
